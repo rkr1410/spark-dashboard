@@ -7,6 +7,7 @@
   --color-surface: #1f211f;
   --color-surface-raised: #252725;
   --color-border: #3b403b;
+  --color-grid: rgba(255, 255, 255, 0.08);
   --color-text: #f3f4ee;
   --color-text-muted: #a8aea6;
   --color-text-subtle: #737a72;

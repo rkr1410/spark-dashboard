@@ -6,15 +6,99 @@
     <title>Spark Dashboard</title>
     <link rel="stylesheet" href="./src/styles/theme.css" />
     <link rel="stylesheet" href="./src/styles/base.css" />
+    <link rel="stylesheet" href="./src/styles/layout.css" />
   </head>
   <body>
-    <main class="app-shell" aria-label="Spark Dashboard">
-      <section class="boot-screen">
-        <div class="boot-mark" aria-hidden="true"></div>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"></span>
         <div>
-          <p class="eyebrow">Spark Dashboard</p>
-          <h1>HAL-90</h1>
+          <p class="brand-title">Spark Dashboard</p>
+          <p class="brand-subtitle">HAL-90</p>
         </div>
+      </div>
+      <div class="topbar-status">
+        <span class="status-dot" aria-hidden="true"></span>
+        Mock data
+      </div>
+    </header>
+
+    <main class="app-shell" aria-label="Spark Dashboard">
+      <section class="dashboard-frame">
+        <section class="metric-row" aria-label="System overview">
+          <aside class="metric-side">
+            <p class="section-label">System</p>
+            <div class="micro-metric" data-tone="temp">
+              <div class="micro-metric-head">
+                <span>TEMP</span>
+                <strong>46 C</strong>
+              </div>
+              <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
+                <polyline class="sparkline-path" points="0,27 18,26 36,28 54,24 72,25 90,21 108,23 126,19 144,22 162,18 180,20" />
+              </svg>
+            </div>
+            <div class="micro-metric" data-tone="power">
+              <div class="micro-metric-head">
+                <span>PWR</span>
+                <strong>15 W</strong>
+              </div>
+              <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
+                <polyline class="sparkline-path" points="0,31 18,29 36,30 54,27 72,28 90,23 108,25 126,22 144,24 162,21 180,23" />
+              </svg>
+            </div>
+          </aside>
+          <div class="metric-hero">
+            <p class="panel-title">System Memory</p>
+            <div class="gauge-placeholder" aria-hidden="true"></div>
+          </div>
+          <div class="metric-chart">
+            <div class="chart-grid" aria-hidden="true"></div>
+          </div>
+        </section>
+
+        <section class="metric-row" aria-label="GPU overview">
+          <aside class="metric-side">
+            <p class="section-label">GPU</p>
+            <div class="micro-metric" data-tone="temp">
+              <div class="micro-metric-head">
+                <span>TEMP</span>
+                <strong>42 C</strong>
+              </div>
+              <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
+                <polyline class="sparkline-path" points="0,24 18,25 36,24 54,23 72,24 90,22 108,23 126,21 144,22 162,20 180,21" />
+              </svg>
+            </div>
+            <div class="micro-metric" data-tone="power">
+              <div class="micro-metric-head">
+                <span>PWR</span>
+                <strong>3 W</strong>
+              </div>
+              <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
+                <polyline class="sparkline-path" points="0,34 18,33 36,34 54,32 72,33 90,31 108,32 126,30 144,31 162,29 180,30" />
+              </svg>
+            </div>
+          </aside>
+          <div class="metric-hero">
+            <p class="panel-title">GPU Utilization</p>
+            <div class="gauge-placeholder" aria-hidden="true"></div>
+          </div>
+          <div class="metric-chart">
+            <div class="chart-grid" aria-hidden="true"></div>
+          </div>
+        </section>
+
+        <section class="llm-shell" aria-label="LLM runtime">
+          <div>
+            <p class="section-label">LLM Runtime</p>
+            <h2>vLLM metrics</h2>
+          </div>
+          <div class="llm-grid">
+            <div class="llm-slot"></div>
+            <div class="llm-slot"></div>
+            <div class="llm-slot"></div>
+            <div class="llm-slot"></div>
+          </div>
+        </section>
       </section>
     </main>
   </body>
