@@ -49,10 +49,43 @@
           </aside>
           <div class="metric-hero">
             <p class="panel-title">System Memory</p>
-            <div class="gauge-placeholder" aria-hidden="true"></div>
+            <div class="gauge" role="img" aria-label="System memory usage 3.31 GB of 128 GB">
+              <svg class="gauge-arc" viewBox="0 0 240 136" aria-hidden="true">
+                <path class="gauge-track" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-band gauge-band-safe" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-band gauge-band-warn" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-band gauge-band-danger" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-value" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+              </svg>
+              <div class="gauge-reading">
+                <strong>3.31 GB</strong>
+                <span>128 GB total</span>
+              </div>
+            </div>
           </div>
           <div class="metric-chart">
-            <div class="chart-grid" aria-hidden="true"></div>
+            <div class="history-chart" role="img" aria-label="System memory history for the last minute">
+              <div class="history-labels">
+                <span>128 GB</span>
+                <span>Last 60s</span>
+              </div>
+              <svg viewBox="0 0 360 126" preserveAspectRatio="none" aria-hidden="true">
+                <polygon class="history-area" points="0,112 0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107 360,112" />
+                <polyline class="history-line" points="0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107" />
+                <g class="history-points">
+                  <circle cx="0" cy="108" r="3" />
+                  <circle cx="40" cy="109" r="3" />
+                  <circle cx="80" cy="108" r="3" />
+                  <circle cx="120" cy="109" r="3" />
+                  <circle cx="160" cy="107" r="3" />
+                  <circle cx="200" cy="108" r="3" />
+                  <circle cx="240" cy="107" r="3" />
+                  <circle cx="280" cy="108" r="3" />
+                  <circle cx="320" cy="106" r="3" />
+                  <circle cx="360" cy="107" r="3" />
+                </g>
+              </svg>
+            </div>
           </div>
         </section>
 
@@ -80,10 +113,43 @@
           </aside>
           <div class="metric-hero">
             <p class="panel-title">GPU Utilization</p>
-            <div class="gauge-placeholder" aria-hidden="true"></div>
+            <div class="gauge" role="img" aria-label="GPU utilization 0 percent">
+              <svg class="gauge-arc" viewBox="0 0 240 136" aria-hidden="true">
+                <path class="gauge-track" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-band gauge-band-safe" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-band gauge-band-warn" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-band gauge-band-danger" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-value gauge-value-empty" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+              </svg>
+              <div class="gauge-reading">
+                <strong>0%</strong>
+                <span>GPU active</span>
+              </div>
+            </div>
           </div>
           <div class="metric-chart">
-            <div class="chart-grid" aria-hidden="true"></div>
+            <div class="history-chart" role="img" aria-label="GPU utilization history for the last minute">
+              <div class="history-labels">
+                <span>100%</span>
+                <span>Last 60s</span>
+              </div>
+              <svg viewBox="0 0 360 126" preserveAspectRatio="none" aria-hidden="true">
+                <polygon class="history-area" points="0,112 0,112 40,112 80,112 120,111 160,112 200,112 240,111 280,112 320,112 360,112 360,112" />
+                <polyline class="history-line" points="0,112 40,112 80,112 120,111 160,112 200,112 240,111 280,112 320,112 360,112" />
+                <g class="history-points">
+                  <circle cx="0" cy="112" r="3" />
+                  <circle cx="40" cy="112" r="3" />
+                  <circle cx="80" cy="112" r="3" />
+                  <circle cx="120" cy="111" r="3" />
+                  <circle cx="160" cy="112" r="3" />
+                  <circle cx="200" cy="112" r="3" />
+                  <circle cx="240" cy="111" r="3" />
+                  <circle cx="280" cy="112" r="3" />
+                  <circle cx="320" cy="112" r="3" />
+                  <circle cx="360" cy="112" r="3" />
+                </g>
+              </svg>
+            </div>
           </div>
         </section>
 

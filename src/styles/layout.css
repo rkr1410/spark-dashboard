@@ -188,6 +188,85 @@
   box-shadow: inset 0 0 0 5px rgba(118, 185, 0, 0.18);
 }
 
+.gauge {
+  width: 230px;
+  height: 134px;
+  position: relative;
+  display: grid;
+  place-items: end center;
+}
+
+.gauge-arc {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.gauge-arc path {
+  fill: none;
+  stroke-linecap: butt;
+}
+
+.gauge-track {
+  stroke: var(--color-gauge-track);
+  stroke-width: 32;
+}
+
+.gauge-band {
+  stroke-width: 7;
+}
+
+.gauge-band-safe {
+  stroke: var(--color-accent);
+  stroke-dasharray: 75 100;
+}
+
+.gauge-band-warn {
+  stroke: var(--color-warning);
+  stroke-dasharray: 13 100;
+  stroke-dashoffset: -77;
+}
+
+.gauge-band-danger {
+  stroke: var(--color-danger);
+  stroke-dasharray: 8 100;
+  stroke-dashoffset: -92;
+}
+
+.gauge-value {
+  stroke: var(--color-accent-strong);
+  stroke-width: 32;
+  stroke-dasharray: 2.6 100;
+}
+
+.gauge-value-empty {
+  stroke-dasharray: 0 100;
+}
+
+.gauge-reading {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 5px;
+  padding-bottom: 18px;
+  text-align: center;
+}
+
+.gauge-reading strong {
+  color: var(--color-text);
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.gauge-reading span {
+  color: var(--color-text-muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
 .metric-chart {
   display: flex;
   align-items: center;
@@ -201,6 +280,56 @@
     linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
   background-size: 100% 28px, 58px 100%;
   border-bottom: 2px solid var(--color-chart);
+}
+
+.history-chart {
+  width: 100%;
+  height: 150px;
+  position: relative;
+  padding-top: 18px;
+  background:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 100% 28px, 58px 100%;
+}
+
+.history-labels {
+  position: absolute;
+  inset: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  color: var(--color-text-subtle);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.history-chart svg {
+  width: 100%;
+  height: 126px;
+  display: block;
+  margin-top: 6px;
+  overflow: visible;
+}
+
+.history-area {
+  fill: var(--color-chart-fill);
+}
+
+.history-line {
+  fill: none;
+  stroke: var(--color-chart);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+  vector-effect: non-scaling-stroke;
+}
+
+.history-points circle {
+  fill: var(--color-surface);
+  stroke: var(--color-chart);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
 }
 
 .llm-shell {

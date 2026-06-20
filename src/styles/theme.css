@@ -16,6 +16,8 @@
   --color-warning: #ff9f1a;
   --color-danger: #f24b3d;
   --color-chart: #169bff;
+  --color-chart-fill: rgba(22, 155, 255, 0.14);
+  --color-gauge-track: #454844;
 
   --shadow-shell: 0 24px 80px rgba(0, 0, 0, 0.36);
   --radius-shell: 8px;
