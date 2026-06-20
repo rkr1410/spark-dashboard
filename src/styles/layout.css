@@ -124,6 +124,75 @@
   --spark-color: var(--color-accent);
 }
 
+.cpu-core-panel {
+  display: grid;
+  gap: 7px;
+}
+
+.cpu-core-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cpu-core-head span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.cpu-core-head strong {
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.cpu-core-grid {
+  width: 100%;
+  height: 44px;
+  display: grid;
+  grid-template-columns: repeat(20, minmax(2px, 1fr));
+  align-items: end;
+  gap: 2px;
+  border-bottom: 1px solid var(--color-grid);
+  background:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 100% 14px, 36px 100%;
+}
+
+.cpu-core {
+  height: 100%;
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 2px 2px 0 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.cpu-core-fill {
+  width: 100%;
+  min-height: 1px;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: block;
+  background: var(--color-accent);
+  transition: height 180ms ease, background-color 180ms ease;
+}
+
+.cpu-core.is-warn .cpu-core-fill {
+  background: var(--color-warning);
+}
+
+.cpu-core.is-danger .cpu-core-fill {
+  background: var(--color-danger);
+}
+
 .micro-metric-head {
   display: flex;
   align-items: baseline;

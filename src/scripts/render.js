@@ -107,13 +107,20 @@
   }
 
   function renderSparkline(target, series, scale) {
-    if (!target || !series || !series.length) {
+    if (!target) {
       return;
     }
 
     var targets = target.length == null ? [target] : Array.prototype.slice.call(target);
 
     if (!targets.length) {
+      return;
+    }
+
+    if (!series || !series.length) {
+      targets.forEach(function (polyline) {
+        polyline.setAttribute("points", "");
+      });
       return;
     }
 
@@ -136,7 +143,7 @@
   }
 
   function renderHistory(container, series, maxValue, maxLabel, ariaLabel) {
-    if (!container || !series || !series.length) {
+    if (!container) {
       return;
     }
 
@@ -160,6 +167,22 @@
 
     setText(container.querySelector("[data-history-max]"), maxLabel);
     container.setAttribute("aria-label", ariaLabel);
+
+    if (!series || !series.length) {
+      if (areaElement) {
+        areaElement.setAttribute("points", "");
+      }
+
+      if (lineElement) {
+        lineElement.setAttribute("points", "");
+      }
+
+      if (pointGroup) {
+        pointGroup.textContent = "";
+      }
+
+      return;
+    }
 
     if (areaElement) {
       areaElement.setAttribute("points", area);
