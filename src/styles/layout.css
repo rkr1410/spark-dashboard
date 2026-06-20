@@ -247,6 +247,7 @@
   stroke: var(--color-accent-strong);
   stroke-width: 32;
   stroke-dasharray: 2.6 100;
+  transition: stroke-dasharray 180ms ease;
 }
 
 .gauge-value-empty {

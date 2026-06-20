@@ -19,7 +19,7 @@
       </div>
       <div class="topbar-status">
         <span class="status-dot" aria-hidden="true"></span>
-        Mock data
+        <span data-updated-at>Mock data</span>
       </div>
     </header>
 
@@ -31,52 +31,52 @@
             <div class="micro-metric" data-tone="temp">
               <div class="micro-metric-head">
                 <div class="micro-value">
-                  <strong>46 C</strong>
-                  <span>/ 104 C</span>
+                  <strong data-value="system.temp">46 C</strong>
+                  <span data-limit="system.temp">/ 104 C</span>
                 </div>
               </div>
               <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
-                <polyline class="sparkline-path" points="0,27 18,26 36,28 54,24 72,25 90,21 108,23 126,19 144,22 162,18 180,20" />
+                <polyline class="sparkline-path" data-sparkline="system.temp" points="0,27 18,26 36,28 54,24 72,25 90,21 108,23 126,19 144,22 162,18 180,20" />
               </svg>
             </div>
             <div class="micro-metric" data-tone="power">
               <div class="micro-metric-head">
                 <div class="micro-value">
-                  <strong>15 W</strong>
-                  <span>/ 140 W</span>
+                  <strong data-value="system.power">15 W</strong>
+                  <span data-limit="system.power">/ 140 W</span>
                 </div>
               </div>
               <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
-                <polyline class="sparkline-path" points="0,31 18,29 36,30 54,27 72,28 90,23 108,25 126,22 144,24 162,21 180,23" />
+                <polyline class="sparkline-path" data-sparkline="system.power" points="0,31 18,29 36,30 54,27 72,28 90,23 108,25 126,22 144,24 162,21 180,23" />
               </svg>
             </div>
           </aside>
           <div class="metric-hero">
             <p class="panel-title">System Memory</p>
-            <div class="gauge" role="img" aria-label="System memory usage 3.31 GB of 128 GB">
+            <div class="gauge" data-gauge="system.memory" role="img" aria-label="System memory usage 3.31 GB of 128 GB">
               <svg class="gauge-arc" viewBox="0 0 240 136" aria-hidden="true">
                 <path class="gauge-track" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
                 <path class="gauge-band gauge-band-safe" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
                 <path class="gauge-band gauge-band-warn" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
                 <path class="gauge-band gauge-band-danger" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
-                <path class="gauge-value" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-value" data-gauge-value pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
               </svg>
               <div class="gauge-reading">
-                <strong>3.31 GB</strong>
-                <span>128 GB total</span>
+                <strong data-gauge-main>3.31 GB</strong>
+                <span data-gauge-sub>128 GB total</span>
               </div>
             </div>
           </div>
           <div class="metric-chart">
-            <div class="history-chart" role="img" aria-label="System memory history for the last minute">
+            <div class="history-chart" data-history="system.memory" role="img" aria-label="System memory history for the last minute">
               <div class="history-labels">
-                <span>128 GB</span>
+                <span data-history-max>128 GB</span>
                 <span>Last 60s</span>
               </div>
               <svg viewBox="0 0 360 126" preserveAspectRatio="none" aria-hidden="true">
-                <polygon class="history-area" points="0,112 0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107 360,112" />
-                <polyline class="history-line" points="0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107" />
-                <g class="history-points">
+                <polygon class="history-area" data-history-area points="0,112 0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107 360,112" />
+                <polyline class="history-line" data-history-line points="0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107" />
+                <g class="history-points" data-history-points>
                   <circle cx="0" cy="108" r="3" />
                   <circle cx="40" cy="109" r="3" />
                   <circle cx="80" cy="108" r="3" />
@@ -99,51 +99,51 @@
             <div class="micro-metric" data-tone="temp">
               <div class="micro-metric-head">
                 <div class="micro-value">
-                  <strong>42 C</strong>
-                  <span>/ 104 C</span>
+                  <strong data-value="gpu.temp">42 C</strong>
+                  <span data-limit="gpu.temp">/ 104 C</span>
                 </div>
               </div>
               <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
-                <polyline class="sparkline-path" points="0,24 18,25 36,24 54,23 72,24 90,22 108,23 126,21 144,22 162,20 180,21" />
+                <polyline class="sparkline-path" data-sparkline="gpu.temp" points="0,24 18,25 36,24 54,23 72,24 90,22 108,23 126,21 144,22 162,20 180,21" />
               </svg>
             </div>
             <div class="micro-metric" data-tone="power">
               <div class="micro-metric-head">
                 <div class="micro-value">
-                  <strong>3 W</strong>
+                  <strong data-value="gpu.power">3 W</strong>
                 </div>
               </div>
               <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
-                <polyline class="sparkline-path" points="0,34 18,33 36,34 54,32 72,33 90,31 108,32 126,30 144,31 162,29 180,30" />
+                <polyline class="sparkline-path" data-sparkline="gpu.power" points="0,34 18,33 36,34 54,32 72,33 90,31 108,32 126,30 144,31 162,29 180,30" />
               </svg>
             </div>
           </aside>
           <div class="metric-hero">
             <p class="panel-title">GPU Utilization</p>
-            <div class="gauge" role="img" aria-label="GPU utilization 0 percent">
+            <div class="gauge" data-gauge="gpu.utilization" role="img" aria-label="GPU utilization 0 percent">
               <svg class="gauge-arc" viewBox="0 0 240 136" aria-hidden="true">
                 <path class="gauge-track" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
                 <path class="gauge-band gauge-band-safe" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
                 <path class="gauge-band gauge-band-warn" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
                 <path class="gauge-band gauge-band-danger" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
-                <path class="gauge-value gauge-value-empty" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-value gauge-value-empty" data-gauge-value pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
               </svg>
               <div class="gauge-reading">
-                <strong>0%</strong>
-                <span>GPU active</span>
+                <strong data-gauge-main>0%</strong>
+                <span data-gauge-sub>GPU active</span>
               </div>
             </div>
           </div>
           <div class="metric-chart">
-            <div class="history-chart" role="img" aria-label="GPU utilization history for the last minute">
+            <div class="history-chart" data-history="gpu.utilization" role="img" aria-label="GPU utilization history for the last minute">
               <div class="history-labels">
-                <span>100%</span>
+                <span data-history-max>100%</span>
                 <span>Last 60s</span>
               </div>
               <svg viewBox="0 0 360 126" preserveAspectRatio="none" aria-hidden="true">
-                <polygon class="history-area" points="0,112 0,112 40,112 80,112 120,111 160,112 200,112 240,111 280,112 320,112 360,112 360,112" />
-                <polyline class="history-line" points="0,112 40,112 80,112 120,111 160,112 200,112 240,111 280,112 320,112 360,112" />
-                <g class="history-points">
+                <polygon class="history-area" data-history-area points="0,112 0,112 40,112 80,112 120,111 160,112 200,112 240,111 280,112 320,112 360,112 360,112" />
+                <polyline class="history-line" data-history-line points="0,112 40,112 80,112 120,111 160,112 200,112 240,111 280,112 320,112 360,112" />
+                <g class="history-points" data-history-points>
                   <circle cx="0" cy="112" r="3" />
                   <circle cx="40" cy="112" r="3" />
                   <circle cx="80" cy="112" r="3" />
@@ -174,5 +174,8 @@
         </section>
       </section>
     </main>
+    <script src="./src/scripts/mock-data.js" defer></script>
+    <script src="./src/scripts/render.js" defer></script>
+    <script src="./src/scripts/app.js" defer></script>
   </body>
 </html>
