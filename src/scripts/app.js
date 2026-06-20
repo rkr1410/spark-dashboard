@@ -14,9 +14,9 @@
       gpuPower: document.querySelector('[data-value="gpu.power"]'),
     },
     sparklines: {
-      systemTemp: document.querySelector('[data-sparkline="system.temp"]'),
+      systemTemp: document.querySelectorAll('[data-sparkline-band="system.temp"]'),
       systemPower: document.querySelector('[data-sparkline="system.power"]'),
-      gpuTemp: document.querySelector('[data-sparkline="gpu.temp"]'),
+      gpuTemp: document.querySelectorAll('[data-sparkline-band="gpu.temp"]'),
       gpuPower: document.querySelector('[data-sparkline="gpu.power"]'),
     },
     gauges: {
@@ -32,6 +32,10 @@
     temp: {
       min: 45,
       max: 105,
+      thresholds: {
+        warn: 80,
+        danger: 95,
+      },
     },
     power: {
       min: 0,
@@ -56,21 +60,21 @@
   function renderTelemetry(snapshot) {
     render.renderMetricValue(
       elements.values.systemTemp,
-      elements.values.systemTempLimit,
+      null,
       Math.round(snapshot.system.temp.valueC) + " C",
-      "/ " + Math.round(snapshot.system.temp.maxC) + " C",
+      "",
     );
     render.renderMetricValue(
       elements.values.systemPower,
       elements.values.systemPowerLimit,
       Math.round(snapshot.system.power.valueW) + " W",
-      "/ " + Math.round(snapshot.system.power.maxW) + " W",
+      snapshot.system.power.maxW == null ? "" : "/ " + Math.round(snapshot.system.power.maxW) + " W",
     );
     render.renderMetricValue(
       elements.values.gpuTemp,
-      elements.values.gpuTempLimit,
+      null,
       Math.round(snapshot.gpu.temp.valueC) + " C",
-      "/ " + Math.round(snapshot.gpu.temp.maxC) + " C",
+      "",
     );
     render.renderMetricValue(
       elements.values.gpuPower,

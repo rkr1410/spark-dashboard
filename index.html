@@ -32,18 +32,29 @@
               <div class="micro-metric-head">
                 <div class="micro-value">
                   <strong data-value="system.temp">46 C</strong>
-                  <span data-limit="system.temp">/ 104 C</span>
                 </div>
               </div>
               <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
-                <polyline class="sparkline-path" data-sparkline="system.temp" points="0,27 18,26 36,28 54,24 72,25 90,21 108,23 126,19 144,22 162,18 180,20" />
+                <defs>
+                  <clipPath id="system-temp-safe-clip">
+                    <rect data-clip-band="safe" x="0" y="18.3" width="180" height="25.7" />
+                  </clipPath>
+                  <clipPath id="system-temp-warn-clip">
+                    <rect data-clip-band="warn" x="0" y="10.3" width="180" height="8" />
+                  </clipPath>
+                  <clipPath id="system-temp-danger-clip">
+                    <rect data-clip-band="danger" x="0" y="0" width="180" height="10.3" />
+                  </clipPath>
+                </defs>
+                <polyline class="sparkline-path sparkline-safe" data-sparkline-band="system.temp" clip-path="url(#system-temp-safe-clip)" points="0,27 18,26 36,28 54,24 72,25 90,21 108,23 126,19 144,22 162,18 180,20" />
+                <polyline class="sparkline-path sparkline-warn" data-sparkline-band="system.temp" clip-path="url(#system-temp-warn-clip)" points="0,27 18,26 36,28 54,24 72,25 90,21 108,23 126,19 144,22 162,18 180,20" />
+                <polyline class="sparkline-path sparkline-danger" data-sparkline-band="system.temp" clip-path="url(#system-temp-danger-clip)" points="0,27 18,26 36,28 54,24 72,25 90,21 108,23 126,19 144,22 162,18 180,20" />
               </svg>
             </div>
             <div class="micro-metric" data-tone="power">
               <div class="micro-metric-head">
                 <div class="micro-value">
                   <strong data-value="system.power">15 W</strong>
-                  <span data-limit="system.power">/ 140 W</span>
                 </div>
               </div>
               <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
@@ -100,11 +111,23 @@
               <div class="micro-metric-head">
                 <div class="micro-value">
                   <strong data-value="gpu.temp">42 C</strong>
-                  <span data-limit="gpu.temp">/ 104 C</span>
                 </div>
               </div>
               <svg class="micro-chart" viewBox="0 0 180 44" preserveAspectRatio="none" aria-hidden="true">
-                <polyline class="sparkline-path" data-sparkline="gpu.temp" points="0,24 18,25 36,24 54,23 72,24 90,22 108,23 126,21 144,22 162,20 180,21" />
+                <defs>
+                  <clipPath id="gpu-temp-safe-clip">
+                    <rect data-clip-band="safe" x="0" y="18.3" width="180" height="25.7" />
+                  </clipPath>
+                  <clipPath id="gpu-temp-warn-clip">
+                    <rect data-clip-band="warn" x="0" y="10.3" width="180" height="8" />
+                  </clipPath>
+                  <clipPath id="gpu-temp-danger-clip">
+                    <rect data-clip-band="danger" x="0" y="0" width="180" height="10.3" />
+                  </clipPath>
+                </defs>
+                <polyline class="sparkline-path sparkline-safe" data-sparkline-band="gpu.temp" clip-path="url(#gpu-temp-safe-clip)" points="0,24 18,25 36,24 54,23 72,24 90,22 108,23 126,21 144,22 162,20 180,21" />
+                <polyline class="sparkline-path sparkline-warn" data-sparkline-band="gpu.temp" clip-path="url(#gpu-temp-warn-clip)" points="0,24 18,25 36,24 54,23 72,24 90,22 108,23 126,21 144,22 162,20 180,21" />
+                <polyline class="sparkline-path sparkline-danger" data-sparkline-band="gpu.temp" clip-path="url(#gpu-temp-danger-clip)" points="0,24 18,25 36,24 54,23 72,24 90,22 108,23 126,21 144,22 162,20 180,21" />
               </svg>
             </div>
             <div class="micro-metric" data-tone="power">

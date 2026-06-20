@@ -59,6 +59,13 @@
     });
   }
 
+  function yForValue(value, scale, height, paddingTop, paddingBottom) {
+    var plotHeight = height - paddingTop - paddingBottom;
+    var ratio = clamp((value - scale.min) / (scale.max - scale.min), 0, 1);
+
+    return roundForSvg(paddingTop + (1 - ratio) * plotHeight);
+  }
+
   function roundForSvg(value) {
     return Math.round(value * 10) / 10;
   }
@@ -71,11 +78,46 @@
       .join(" ");
   }
 
-  function renderSparkline(polyline, series, scale) {
-    if (!polyline || !series || !series.length) {
+  function updateThresholdClips(target, scale, height, paddingTop, paddingBottom) {
+    if (!scale || !scale.thresholds || !target.ownerSVGElement) {
       return;
     }
 
+    var svg = target.ownerSVGElement;
+    var warnY = yForValue(scale.thresholds.warn, scale, height, paddingTop, paddingBottom);
+    var dangerY = yForValue(scale.thresholds.danger, scale, height, paddingTop, paddingBottom);
+    var safeClip = svg.querySelector('[data-clip-band="safe"]');
+    var warnClip = svg.querySelector('[data-clip-band="warn"]');
+    var dangerClip = svg.querySelector('[data-clip-band="danger"]');
+
+    if (safeClip) {
+      safeClip.setAttribute("y", warnY);
+      safeClip.setAttribute("height", roundForSvg(height - warnY));
+    }
+
+    if (warnClip) {
+      warnClip.setAttribute("y", dangerY);
+      warnClip.setAttribute("height", roundForSvg(warnY - dangerY));
+    }
+
+    if (dangerClip) {
+      dangerClip.setAttribute("y", 0);
+      dangerClip.setAttribute("height", dangerY);
+    }
+  }
+
+  function renderSparkline(target, series, scale) {
+    if (!target || !series || !series.length) {
+      return;
+    }
+
+    var targets = target.length == null ? [target] : Array.prototype.slice.call(target);
+
+    if (!targets.length) {
+      return;
+    }
+
+    var firstTarget = targets[0];
     var points = toCoordinates(series, {
       width: 180,
       height: 44,
@@ -84,8 +126,13 @@
       paddingTop: 5,
       paddingBottom: 7,
     });
+    var pointString = pointsToString(points);
 
-    polyline.setAttribute("points", pointsToString(points));
+    targets.forEach(function (polyline) {
+      polyline.setAttribute("points", pointString);
+    });
+
+    updateThresholdClips(firstTarget, scale, 44, 5, 7);
   }
 
   function renderHistory(container, series, maxValue, maxLabel, ariaLabel) {
