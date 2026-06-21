@@ -13,8 +13,8 @@ The current runtime is dependency-free:
 - `src/scripts/app.js` refreshes the page once per second and uses `/api/snapshot`
   when the page is served by the dev server.
 - `server/dev_server.py` serves the static UI plus the JSON snapshot API.
-- `server/collectors.py` reads `/proc/meminfo`, thermal zones, and `nvidia-smi`
-  when those interfaces are available.
+- `server/collectors.py` reads `/proc/meminfo`, thermal zones, `/proc/stat`,
+  and NVIDIA GPU metrics through NVML when those interfaces are available.
 
 Local mock-only preview:
 

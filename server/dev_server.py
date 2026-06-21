@@ -10,7 +10,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from collectors import collect_snapshot
+from collectors import build_startup_report, collect_snapshot
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +62,8 @@ def main() -> None:
     server = ThreadingHTTPServer((args.host, args.port), handler)
 
     print(f"Serving Spark Dashboard on http://{args.host}:{args.port}")
+    for line in build_startup_report(use_mock=args.mock):
+        print(line)
     server.serve_forever()
 
 

@@ -7,10 +7,9 @@ just to get the first live dashboard running.
 
 from __future__ import annotations
 
-import csv
+import ctypes
+import ctypes.util
 import math
-import shutil
-import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +22,19 @@ THERMAL_ROOT = Path("/sys/class/thermal")
 MEMINFO_PATH = Path("/proc/meminfo")
 PROC_STAT_PATH = Path("/proc/stat")
 CPU_PREVIOUS: dict[int, tuple[int, int]] = {}
+NVML_SUCCESS = 0
+NVML_TEMPERATURE_GPU = 0
+NVML: ctypes.CDLL | None = None
+NVML_LOAD_ATTEMPTED = False
+NVML_LOAD_ERROR: str | None = None
+NVML_LIBRARY_PATH: str | None = None
+
+
+class NvmlUtilization(ctypes.Structure):
+    _fields_ = [
+        ("gpu", ctypes.c_uint),
+        ("memory", ctypes.c_uint),
+    ]
 
 
 def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
@@ -32,7 +44,7 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
     memory = read_system_memory()
     thermal = read_system_thermal()
     cpu = read_cpu_utilization()
-    gpu = read_nvidia_smi()
+    gpu = read_gpu_nvml()
 
     return {
         "timestamp": utc_timestamp(),
@@ -79,8 +91,35 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
     }
 
 
+def build_startup_report(use_mock: bool = False) -> list[str]:
+    snapshot = collect_snapshot(use_mock=use_mock)
+    source = snapshot["source"]
+    system = snapshot["system"]
+    gpu = snapshot["gpu"]
+
+    return [
+        "Telemetry startup:",
+        f"  mode: {source['mode']}",
+        f"  NVML: {nvml_status_text(use_mock=use_mock)}",
+        (
+            "  initial system: "
+            f"memory {format_gb(system['memory']['usedGb'])}/{format_gb(system['memory']['totalGb'])}, "
+            f"temp {format_c(system['temp']['valueC'])}, "
+            f"cpu {format_pct(system['cpu']['avgPct'])}"
+        ),
+        (
+            "  initial GPU: "
+            f"util {format_pct(gpu['utilization']['valuePct'])}, "
+            f"temp {format_c(gpu['temp']['valueC'])}, "
+            f"power {format_w(gpu['power']['valueW'])}, "
+            f"limit {format_w(gpu['power']['maxW'])}, "
+            f"source {source['gpu']}"
+        ),
+    ]
+
+
 def should_use_mock_snapshot() -> bool:
-    return not MEMINFO_PATH.exists() and shutil.which("nvidia-smi") is None
+    return not MEMINFO_PATH.exists() and load_nvml() is None
 
 
 def read_system_memory() -> dict[str, Any]:
@@ -259,47 +298,158 @@ def clamp_pct(value: float) -> float:
     return min(max(value, 0.0), 100.0)
 
 
-def read_nvidia_smi() -> dict[str, Any]:
-    if shutil.which("nvidia-smi") is None:
-        return empty_gpu("unavailable")
+def read_gpu_nvml() -> dict[str, Any]:
+    nvml = load_nvml()
 
-    fields = [
-        "utilization.gpu",
-        "temperature.gpu",
-        "power.draw",
-        "power.limit",
-    ]
-    command = [
-        "nvidia-smi",
-        "--query-gpu=" + ",".join(fields),
-        "--format=csv,noheader,nounits",
-    ]
+    if nvml is None:
+        return empty_gpu("nvml_unavailable")
 
-    try:
-        result = subprocess.run(
-            command,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        )
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return empty_gpu("nvidia_smi_error")
+    handle = nvml_device_handle(nvml, 0)
 
-    rows = [row for row in csv.reader(result.stdout.splitlines()) if row]
-
-    if not rows:
-        return empty_gpu("nvidia_smi_empty")
-
-    first_gpu = rows[0]
+    if handle is None:
+        return empty_gpu("nvml_no_device")
 
     return {
-        "utilizationPct": parse_number(first_gpu, 0),
-        "tempC": parse_number(first_gpu, 1),
-        "powerW": parse_number(first_gpu, 2),
-        "powerLimitW": parse_number(first_gpu, 3),
-        "source": "nvidia_smi",
+        "utilizationPct": nvml_gpu_utilization(nvml, handle),
+        "tempC": nvml_gpu_temperature(nvml, handle),
+        "powerW": nvml_gpu_power_watts(nvml, handle, "nvmlDeviceGetPowerUsage"),
+        "powerLimitW": nvml_gpu_power_watts(nvml, handle, "nvmlDeviceGetPowerManagementLimit"),
+        "source": "nvml",
     }
+
+
+def load_nvml() -> ctypes.CDLL | None:
+    global NVML, NVML_LIBRARY_PATH, NVML_LOAD_ATTEMPTED, NVML_LOAD_ERROR
+
+    if NVML_LOAD_ATTEMPTED:
+        return NVML
+
+    NVML_LOAD_ATTEMPTED = True
+    candidates = [ctypes.util.find_library("nvidia-ml"), "libnvidia-ml.so.1", "libnvidia-ml.so"]
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+
+        try:
+            nvml = ctypes.CDLL(candidate)
+            configure_nvml(nvml)
+            result = nvml.nvmlInit_v2()
+
+            if result == NVML_SUCCESS:
+                NVML = nvml
+                NVML_LIBRARY_PATH = str(candidate)
+                NVML_LOAD_ERROR = None
+                return NVML
+
+            NVML_LOAD_ERROR = f"nvmlInit_v2 returned {result}"
+        except OSError as error:
+            NVML_LOAD_ERROR = str(error)
+        except AttributeError as error:
+            NVML_LOAD_ERROR = str(error)
+
+    return None
+
+
+def nvml_status_text(use_mock: bool = False) -> str:
+    if use_mock:
+        return "skipped (--mock)"
+
+    nvml = load_nvml()
+
+    if nvml is not None:
+        return f"loaded {NVML_LIBRARY_PATH or getattr(nvml, '_name', 'libnvidia-ml')}"
+
+    return f"unavailable ({short_text(NVML_LOAD_ERROR or 'library not found')})"
+
+
+def configure_nvml(nvml: ctypes.CDLL) -> None:
+    nvml.nvmlInit_v2.restype = ctypes.c_int
+
+    nvml.nvmlDeviceGetHandleByIndex_v2.argtypes = [
+        ctypes.c_uint,
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    nvml.nvmlDeviceGetHandleByIndex_v2.restype = ctypes.c_int
+
+    nvml.nvmlDeviceGetUtilizationRates.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(NvmlUtilization),
+    ]
+    nvml.nvmlDeviceGetUtilizationRates.restype = ctypes.c_int
+
+    nvml.nvmlDeviceGetTemperature.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint,
+        ctypes.POINTER(ctypes.c_uint),
+    ]
+    nvml.nvmlDeviceGetTemperature.restype = ctypes.c_int
+
+    configure_optional_uint_getter(nvml, "nvmlDeviceGetPowerUsage")
+    configure_optional_uint_getter(nvml, "nvmlDeviceGetPowerManagementLimit")
+
+
+def configure_optional_uint_getter(nvml: ctypes.CDLL, name: str) -> None:
+    function = getattr(nvml, name, None)
+
+    if function is None:
+        return
+
+    function.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_uint),
+    ]
+    function.restype = ctypes.c_int
+
+
+def nvml_device_handle(nvml: ctypes.CDLL, index: int) -> ctypes.c_void_p | None:
+    handle = ctypes.c_void_p()
+    result = nvml.nvmlDeviceGetHandleByIndex_v2(ctypes.c_uint(index), ctypes.byref(handle))
+
+    return handle if result == NVML_SUCCESS else None
+
+
+def nvml_gpu_utilization(nvml: ctypes.CDLL, handle: ctypes.c_void_p) -> float | None:
+    utilization = NvmlUtilization()
+    result = nvml.nvmlDeviceGetUtilizationRates(handle, ctypes.byref(utilization))
+
+    if result != NVML_SUCCESS:
+        return None
+
+    return float(utilization.gpu)
+
+
+def nvml_gpu_temperature(nvml: ctypes.CDLL, handle: ctypes.c_void_p) -> float | None:
+    temperature = ctypes.c_uint()
+    result = nvml.nvmlDeviceGetTemperature(
+        handle,
+        ctypes.c_uint(NVML_TEMPERATURE_GPU),
+        ctypes.byref(temperature),
+    )
+
+    if result != NVML_SUCCESS:
+        return None
+
+    return float(temperature.value)
+
+
+def nvml_gpu_power_watts(
+    nvml: ctypes.CDLL,
+    handle: ctypes.c_void_p,
+    function_name: str,
+) -> float | None:
+    value = ctypes.c_uint()
+    function = getattr(nvml, function_name, None)
+
+    if function is None:
+        return None
+
+    result = function(handle, ctypes.byref(value))
+
+    if result != NVML_SUCCESS:
+        return None
+
+    return round(value.value / 1000, 2)
 
 
 def empty_gpu(source: str) -> dict[str, Any]:
@@ -310,23 +460,6 @@ def empty_gpu(source: str) -> dict[str, Any]:
         "powerLimitW": None,
         "source": source,
     }
-
-
-def parse_number(row: list[str], index: int) -> float | None:
-    if index >= len(row):
-        return None
-
-    raw = row[index].strip().replace("[", "").replace("]", "")
-
-    if raw in {"", "N/A", "Not Supported"}:
-        return None
-
-    try:
-        value = float(raw)
-    except ValueError:
-        return None
-
-    return value if math.isfinite(value) else None
 
 
 def mock_snapshot() -> dict[str, Any]:
@@ -391,6 +524,26 @@ def average_cpu(cores: list[dict[str, float | int]]) -> float:
     values = [float(core["valuePct"]) for core in cores]
 
     return round(sum(values) / len(values), 1)
+
+
+def format_gb(value: Any) -> str:
+    return f"{value:.2f} GB" if isinstance(value, int | float) else "N/A"
+
+
+def format_c(value: Any) -> str:
+    return f"{value:.1f} C" if isinstance(value, int | float) else "N/A"
+
+
+def format_w(value: Any) -> str:
+    return f"{value:.2f} W" if isinstance(value, int | float) else "N/A"
+
+
+def format_pct(value: Any) -> str:
+    return f"{value:.1f}%" if isinstance(value, int | float) else "N/A"
+
+
+def short_text(value: str, max_length: int = 140) -> str:
+    return value if len(value) <= max_length else value[: max_length - 3] + "..."
 
 
 def utc_timestamp() -> str:
