@@ -1,0 +1,24 @@
+services:
+  vllm:
+    image: ${IMAGE}
+    container_name: ${CONTAINER_NAME}
+    network_mode: host
+    ipc: host
+    gpus: all
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    volumes:
+      - ${HF_CACHE_HOST}:${HF_CACHE_CONTAINER}
+    environment:
+      HF_HOME: ${HF_HOME}
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-0}
+      VLLM_USE_V2_MODEL_RUNNER: ${VLLM_USE_V2_MODEL_RUNNER:-0}
+      MODEL_ID: ${MODEL_ID}
+      PORT: ${PORT}
+      VLLM_ARGS: ${VLLM_ARGS}
+    entrypoint:
+      - /bin/sh
+      - -lc
+    command:
+      - exec vllm serve "$${MODEL_ID}" --host 0.0.0.0 --port "$${PORT}" $${VLLM_ARGS}
