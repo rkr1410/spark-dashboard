@@ -21,6 +21,19 @@ class SparkDashboardHandler(SimpleHTTPRequestHandler):
         self.force_mock = force_mock
         super().__init__(*args, **kwargs)
 
+    def send_head(self):
+        # This is a local dev dashboard. Always send fresh static files so the
+        # browser cannot mix old JS/CSS with new HTML after rsync.
+        for header in ("If-Modified-Since", "If-None-Match"):
+            if header in self.headers:
+                del self.headers[header]
+
+        return super().send_head()
+
+    def end_headers(self) -> None:
+        self.send_header("Cache-Control", "no-store, max-age=0")
+        super().end_headers()
+
     def do_GET(self) -> None:
         if urlparse(self.path).path == "/api/snapshot":
             self.send_snapshot()

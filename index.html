@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="en" data-theme="dgx-dark">
+<html lang="en" data-theme="gruvbox-dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spark Dashboard</title>
-    <link rel="stylesheet" href="./src/styles/theme.css" />
-    <link rel="stylesheet" href="./src/styles/base.css" />
-    <link rel="stylesheet" href="./src/styles/layout.css" />
+    <link rel="stylesheet" href="./src/styles/theme.css?v=20260622-memory-hidden-5" />
+    <link rel="stylesheet" href="./src/styles/base.css?v=20260622-memory-hidden-5" />
+    <link rel="stylesheet" href="./src/styles/layout.css?v=20260622-memory-hidden-5" />
   </head>
   <body>
     <header class="topbar">
@@ -82,13 +82,13 @@
           </aside>
           <div class="metric-hero">
             <p class="panel-title">System Memory</p>
-            <div class="gauge" data-gauge="system.memory" role="img" aria-label="System memory usage 3.31 GB of 128 GB">
+            <div class="gauge gauge-memory" data-gauge="system.memory" role="img" aria-label="System memory usage 3.31 GB of 128 GB">
               <svg class="gauge-arc" viewBox="0 0 240 136" aria-hidden="true">
                 <path class="gauge-track" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
-                <path class="gauge-band gauge-band-safe" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
-                <path class="gauge-band gauge-band-warn" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
-                <path class="gauge-band gauge-band-danger" pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
-                <path class="gauge-value" data-gauge-value pathLength="100" d="M 24 112 A 96 96 0 0 1 216 112" />
+                <path class="gauge-memory-free" pathLength="100" d="M 16 112 A 104 104 0 0 1 224 112" />
+                <path class="gauge-memory-pressure-track" pathLength="100" d="M 34 112 A 86 86 0 0 1 206 112" />
+                <path class="gauge-memory-resident" data-gauge-resident pathLength="100" d="M 16 112 A 104 104 0 0 1 224 112" />
+                <path class="gauge-memory-pressure" data-gauge-pressure pathLength="100" d="M 34 112 A 86 86 0 0 1 206 112" />
               </svg>
               <div class="gauge-reading">
                 <strong data-gauge-main>3.31 GB</strong>
@@ -215,8 +215,8 @@
         </section>
       </section>
     </main>
-    <script src="./src/scripts/mock-data.js" defer></script>
-    <script src="./src/scripts/render.js" defer></script>
-    <script src="./src/scripts/app.js" defer></script>
+    <script src="./src/scripts/mock-data.js?v=20260622-memory-hidden-5" defer></script>
+    <script src="./src/scripts/render.js?v=20260622-memory-hidden-5" defer></script>
+    <script src="./src/scripts/app.js?v=20260622-memory-hidden-5" defer></script>
   </body>
 </html>

@@ -223,6 +223,29 @@
     container.setAttribute("aria-label", ariaLabel);
   }
 
+  function renderMemoryGauge(container, pressurePercent, residentPercent, mainText, subText, ariaLabel) {
+    if (!container) {
+      return;
+    }
+
+    updateGaugeLayer(container.querySelector("[data-gauge-pressure]"), pressurePercent);
+    updateGaugeLayer(container.querySelector("[data-gauge-resident]"), residentPercent);
+    setText(container.querySelector("[data-gauge-main]"), mainText);
+    setText(container.querySelector("[data-gauge-sub]"), subText);
+    container.setAttribute("aria-label", ariaLabel);
+  }
+
+  function updateGaugeLayer(path, percent) {
+    if (!path) {
+      return;
+    }
+
+    var clamped = clamp(percent, 0, 100);
+
+    path.style.strokeDasharray = formatNumber(clamped, 1) + " 100";
+    path.classList.toggle("gauge-value-empty", clamped === 0);
+  }
+
   function renderMetricValue(valueElement, limitElement, valueText, limitText) {
     setText(valueElement, valueText);
     setText(limitElement, limitText || "");
@@ -231,6 +254,7 @@
   window.SparkRender = {
     formatNumber: formatNumber,
     renderGauge: renderGauge,
+    renderMemoryGauge: renderMemoryGauge,
     renderHistory: renderHistory,
     renderMetricValue: renderMetricValue,
     renderSparkline: renderSparkline,

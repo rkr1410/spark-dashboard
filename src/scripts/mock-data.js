@@ -5,9 +5,14 @@
   var state = {
     system: {
       memory: {
-        usedGb: 64,
+        usedGb: 14,
+        residentGb: 84,
+        fileGb: 82,
+        anonGb: 0.55,
+        cudaGb: 8,
+        processCount: 1,
         totalGb: 128,
-        series: [61.8, 62.4, 63.1, 64.0, 65.2, 64.6, 63.7, 64.4, 65.0, 64.2],
+        series: [12.7, 13.1, 13.8, 14.0, 14.8, 14.2, 13.7, 14.1, 14.6, 14.0],
       },
       temp: {
         valueC: 75,
@@ -89,6 +94,11 @@
       system: {
         memory: {
           usedGb: state.system.memory.usedGb,
+          residentGb: state.system.memory.residentGb,
+          fileGb: state.system.memory.fileGb,
+          anonGb: state.system.memory.anonGb,
+          cudaGb: state.system.memory.cudaGb,
+          processCount: state.system.memory.processCount,
           totalGb: state.system.memory.totalGb,
           series: cloneSeries(state.system.memory.series),
         },
@@ -130,7 +140,10 @@
   function updateState() {
     tick += 1;
 
-    state.system.memory.usedGb = round(wave(64, 2.8, 0.31, 0.2), 2);
+    state.system.memory.usedGb = round(wave(14, 1.4, 0.31, 0.2), 2);
+    state.system.memory.residentGb = round(wave(84, 3.2, 0.19, 0.8), 2);
+    state.system.memory.fileGb = round(wave(82, 3.0, 0.19, 0.8), 2);
+    state.system.memory.cudaGb = round(wave(8, 0.4, 0.22, 1.5), 2);
     state.system.temp.valueC = round(wave(75, 2.1, 0.42, 1.1), 1);
     state.system.cpu.cores = makeCpuCores(tick);
     state.system.cpu.avgPct = averageCpu(state.system.cpu.cores);

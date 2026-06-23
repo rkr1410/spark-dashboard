@@ -10,6 +10,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import math
+import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,8 @@ THERMAL_ROOT = Path("/sys/class/thermal")
 MEMINFO_PATH = Path("/proc/meminfo")
 PROC_STAT_PATH = Path("/proc/stat")
 CPU_PREVIOUS: dict[int, tuple[int, int]] = {}
+PROCESS_MEMORY_CACHE_TTL_SECONDS = 5.0
+PROCESS_MEMORY_CACHE: tuple[float, dict[str, Any]] | None = None
 NVML_SUCCESS = 0
 NVML_TEMPERATURE_GPU = 0
 NVML: ctypes.CDLL | None = None
@@ -42,6 +45,7 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
         return mock_snapshot()
 
     memory = read_system_memory()
+    process_memory = read_cuda_process_memory()
     thermal = read_system_thermal()
     cpu = read_cpu_utilization()
     gpu = read_gpu_nvml()
@@ -51,6 +55,7 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
         "source": {
             "mode": "live",
             "systemMemory": memory["source"],
+            "processMemory": process_memory["source"],
             "systemTemp": thermal["source"],
             "systemCpu": cpu["source"],
             "gpu": gpu["source"],
@@ -59,6 +64,12 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
             "memory": {
                 "usedGb": memory["usedGb"],
                 "totalGb": memory["totalGb"],
+                "residentGb": process_memory["residentGb"],
+                "fileGb": process_memory["fileGb"],
+                "anonGb": process_memory["anonGb"],
+                "cudaGb": process_memory["cudaGb"],
+                "processCount": process_memory["processCount"],
+                "processes": process_memory["processes"],
             },
             "temp": {
                 "valueC": thermal["valueC"],
@@ -104,6 +115,8 @@ def build_startup_report(use_mock: bool = False) -> list[str]:
         (
             "  initial system: "
             f"memory {format_gb(system['memory']['usedGb'])}/{format_gb(system['memory']['totalGb'])}, "
+            f"resident {format_gb(system['memory'].get('residentGb'))}, "
+            f"cuda {format_gb(system['memory'].get('cudaGb'))}, "
             f"temp {format_c(system['temp']['valueC'])}, "
             f"cpu {format_pct(system['cpu']['avgPct'])}"
         ),
@@ -143,6 +156,144 @@ def read_system_memory() -> dict[str, Any]:
         "totalGb": round(total_kb / 1_000_000) or PROJECTED_TOTAL_GB,
         "source": "proc_meminfo",
     }
+
+
+def read_cuda_process_memory() -> dict[str, Any]:
+    global PROCESS_MEMORY_CACHE
+
+    now = time.monotonic()
+
+    if PROCESS_MEMORY_CACHE and now - PROCESS_MEMORY_CACHE[0] < PROCESS_MEMORY_CACHE_TTL_SECONDS:
+        return PROCESS_MEMORY_CACHE[1]
+
+    processes = query_cuda_processes()
+    totals = {
+        "residentGb": 0.0,
+        "fileGb": 0.0,
+        "anonGb": 0.0,
+        "cudaGb": 0.0,
+        "processCount": len(processes),
+        "processes": processes,
+        "source": "nvidia_smi_proc" if processes else "nvidia_smi_proc_empty",
+    }
+
+    for process in processes:
+        pid = process["pid"]
+        proc_memory = read_proc_process_memory(pid)
+
+        process.update(proc_memory)
+        totals["residentGb"] += proc_memory.get("residentGb") or 0
+        totals["fileGb"] += proc_memory.get("fileGb") or 0
+        totals["anonGb"] += proc_memory.get("anonGb") or 0
+        totals["cudaGb"] += process.get("cudaGb") or 0
+
+    for key in ("residentGb", "fileGb", "anonGb", "cudaGb"):
+        totals[key] = round(totals[key], 2)
+
+    PROCESS_MEMORY_CACHE = (now, totals)
+    return totals
+
+
+def query_cuda_processes() -> list[dict[str, Any]]:
+    command = [
+        "nvidia-smi",
+        "--query-compute-apps=pid,process_name,used_memory",
+        "--format=csv,noheader,nounits",
+    ]
+
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            encoding="utf-8",
+            timeout=1.5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+
+    if result.returncode != 0:
+        return []
+
+    processes: list[dict[str, Any]] = []
+
+    for line in result.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",", 2)]
+
+        if len(parts) != 3 or not parts[0].isdigit():
+            continue
+
+        used_mib = parse_float(parts[2])
+
+        processes.append(
+            {
+                "pid": int(parts[0]),
+                "name": short_process_name(parts[1]),
+                "cudaGb": round(used_mib / 1024, 2) if used_mib is not None else None,
+            },
+        )
+
+    return processes
+
+
+def read_proc_process_memory(pid: int) -> dict[str, float | None]:
+    values = read_proc_key_values(Path("/proc") / str(pid) / "smaps_rollup")
+
+    if values:
+        resident_kb = values.get("Pss") or values.get("Rss")
+        file_kb = values.get("Pss_File")
+        anon_kb = values.get("Pss_Anon") or values.get("Anonymous")
+
+        return {
+            "residentGb": kb_to_gb(resident_kb),
+            "fileGb": kb_to_gb(file_kb),
+            "anonGb": kb_to_gb(anon_kb),
+        }
+
+    status = read_proc_key_values(Path("/proc") / str(pid) / "status")
+
+    return {
+        "residentGb": kb_to_gb(status.get("VmRSS")),
+        "fileGb": kb_to_gb(status.get("RssFile")),
+        "anonGb": kb_to_gb(status.get("RssAnon")),
+    }
+
+
+def read_proc_key_values(path: Path) -> dict[str, int]:
+    values: dict[str, int] = {}
+
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return values
+
+    for line in lines:
+        key, separator, rest = line.partition(":")
+
+        if not separator:
+            continue
+
+        parts = rest.strip().split()
+
+        if parts and parts[0].isdigit():
+            values[key] = int(parts[0])
+
+    return values
+
+
+def parse_float(value: str) -> float | None:
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def kb_to_gb(value: int | None) -> float | None:
+    return round(value / 1_000_000, 2) if value is not None else None
+
+
+def short_process_name(value: str) -> str:
+    return Path(value).name or value
 
 
 def read_meminfo() -> dict[str, int]:
@@ -471,14 +622,30 @@ def mock_snapshot() -> dict[str, Any]:
         "source": {
             "mode": "mock",
             "systemMemory": "mock",
+            "processMemory": "mock",
             "systemTemp": "mock",
             "systemCpu": "mock",
             "gpu": "mock",
         },
         "system": {
             "memory": {
-                "usedGb": round(64 + math.sin(t * 0.31) * 2.8, 2),
+                "usedGb": round(14 + math.sin(t * 0.31) * 1.4, 2),
                 "totalGb": PROJECTED_TOTAL_GB,
+                "residentGb": round(84 + math.sin(t * 0.19 + 0.8) * 3.2, 2),
+                "fileGb": round(82 + math.sin(t * 0.19 + 0.8) * 3.0, 2),
+                "anonGb": 0.55,
+                "cudaGb": round(8 + math.sin(t * 0.22 + 1.5) * 0.4, 2),
+                "processCount": 1,
+                "processes": [
+                    {
+                        "pid": 2823992,
+                        "name": "ds4-server",
+                        "residentGb": round(84 + math.sin(t * 0.19 + 0.8) * 3.2, 2),
+                        "fileGb": round(82 + math.sin(t * 0.19 + 0.8) * 3.0, 2),
+                        "anonGb": 0.55,
+                        "cudaGb": round(8 + math.sin(t * 0.22 + 1.5) * 0.4, 2),
+                    },
+                ],
             },
             "temp": {
                 "valueC": round(75 + math.sin(t * 0.42 + 1.1) * 2.1, 1),

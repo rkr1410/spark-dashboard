@@ -18,6 +18,16 @@
   --color-chart: #169bff;
   --color-chart-fill: rgba(22, 155, 255, 0.14);
   --color-gauge-track: #454844;
+  --color-memory-free: #76b900;
+  --color-memory-resident: #ffb12a;
+  --color-memory-pressure: #ffb12a;
+  --color-topbar-bg: rgba(15, 17, 16, 0.92);
+  --color-topbar-glow: rgba(118, 185, 0, 0.12);
+  --color-shell-bg: rgba(18, 20, 19, 0.84);
+  --color-muted-fill: rgba(255, 255, 255, 0.06);
+  --color-accent-glow-soft: rgba(118, 185, 0, 0.28);
+  --color-accent-glow-strong: rgba(118, 185, 0, 0.42);
+  --color-accent-ring: rgba(118, 185, 0, 0.18);
 
   --shadow-shell: 0 24px 80px rgba(0, 0, 0, 0.36);
   --radius-shell: 8px;
@@ -26,4 +36,37 @@
   --font-ui:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
+}
+
+[data-theme="gruvbox-dark"] {
+  color-scheme: dark;
+
+  --color-bg: #1d2021;
+  --color-bg-radial: rgba(250, 189, 47, 0.1);
+  --color-surface: #282828;
+  --color-surface-raised: #32302f;
+  --color-border: #504945;
+  --color-grid: rgba(235, 219, 178, 0.1);
+  --color-text: #fbf1c7;
+  --color-text-muted: #d5c4a1;
+  --color-text-subtle: #a89984;
+  --color-accent: #b8bb26;
+  --color-accent-strong: #d79921;
+  --color-warning: #fabd2f;
+  --color-danger: #fb4934;
+  --color-chart: #83a598;
+  --color-chart-fill: rgba(131, 165, 152, 0.18);
+  --color-gauge-track: #504945;
+  --color-memory-free: #98971a;
+  --color-memory-resident: #fabd2f;
+  --color-memory-pressure: #fabd2f;
+  --color-topbar-bg: rgba(40, 40, 40, 0.94);
+  --color-topbar-glow: rgba(250, 189, 47, 0.11);
+  --color-shell-bg: rgba(29, 32, 33, 0.88);
+  --color-muted-fill: rgba(235, 219, 178, 0.07);
+  --color-accent-glow-soft: rgba(184, 187, 38, 0.2);
+  --color-accent-glow-strong: rgba(250, 189, 47, 0.32);
+  --color-accent-ring: rgba(184, 187, 38, 0.16);
+
+  --shadow-shell: 0 24px 80px rgba(0, 0, 0, 0.42);
 }

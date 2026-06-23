@@ -4,10 +4,10 @@
   align-items: center;
   justify-content: space-between;
   padding: 0 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 1px solid var(--color-grid);
   background:
-    linear-gradient(90deg, rgba(118, 185, 0, 0.12), transparent 34%),
-    rgba(15, 17, 16, 0.92);
+    linear-gradient(90deg, var(--color-topbar-glow), transparent 34%),
+    var(--color-topbar-bg);
 }
 
 .brand,
@@ -25,7 +25,7 @@
   height: 16px;
   border-radius: 3px;
   background: var(--color-accent);
-  box-shadow: 0 0 20px rgba(118, 185, 0, 0.28);
+  box-shadow: 0 0 20px var(--color-accent-glow-soft);
 }
 
 .brand-title {
@@ -55,7 +55,7 @@
   height: 7px;
   border-radius: 50%;
   background: var(--color-accent);
-  box-shadow: 0 0 14px rgba(118, 185, 0, 0.42);
+  box-shadow: 0 0 14px var(--color-accent-glow-strong);
 }
 
 .app-shell {
@@ -72,7 +72,7 @@
   padding: 24px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-shell);
-  background: rgba(18, 20, 19, 0.84);
+  background: var(--color-shell-bg);
   box-shadow: var(--shadow-shell);
 }
 
@@ -170,7 +170,7 @@
   display: block;
   overflow: hidden;
   border-radius: 2px 2px 0 0;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-muted-fill);
 }
 
 .cpu-core-fill {
@@ -274,7 +274,7 @@
   border: 22px solid var(--color-surface-raised);
   border-bottom: 0;
   border-radius: 190px 190px 0 0;
-  box-shadow: inset 0 0 0 5px rgba(118, 185, 0, 0.18);
+  box-shadow: inset 0 0 0 5px var(--color-accent-ring);
 }
 
 .gauge {
@@ -333,6 +333,38 @@
 
 .gauge-value-empty {
   stroke-dasharray: 0 100;
+}
+
+.gauge-memory-free {
+  stroke: var(--color-memory-free);
+  stroke-width: 10;
+  stroke-dasharray: 100 100;
+}
+
+.gauge-memory-pressure-track {
+  stroke: var(--color-muted-fill);
+  stroke-width: 16;
+  stroke-dasharray: 100 100;
+}
+
+.gauge-memory-resident,
+.gauge-memory-pressure {
+  stroke-dasharray: 0 100;
+  transition: stroke-dasharray 180ms ease;
+}
+
+.gauge-memory-resident {
+  stroke: var(--color-memory-resident);
+  stroke-width: 10;
+}
+
+.gauge-memory-pressure {
+  stroke: var(--color-memory-pressure);
+  stroke-width: 16;
+}
+
+.gauge-memory .gauge-track {
+  opacity: 0.7;
 }
 
 .gauge-reading {

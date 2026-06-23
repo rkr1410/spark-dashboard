@@ -153,6 +153,11 @@
         memory: {
           usedGb: asNumber(systemMemory.usedGb),
           totalGb: asNumber(systemMemory.totalGb),
+          residentGb: asNumber(systemMemory.residentGb),
+          fileGb: asNumber(systemMemory.fileGb),
+          anonGb: asNumber(systemMemory.anonGb),
+          cudaGb: asNumber(systemMemory.cudaGb),
+          processCount: asNumber(systemMemory.processCount),
         },
         temp: {
           valueC: asNumber(systemTemp.valueC),
@@ -286,18 +291,52 @@
   function renderSystemMemory(snapshot) {
     var memory = snapshot.system.memory;
     var hasMemory = isNumber(memory.usedGb) && isNumber(memory.totalGb) && memory.totalGb > 0;
-    var percent = hasMemory ? (memory.usedGb / memory.totalGb) * 100 : 0;
-    var usedText = hasMemory ? render.formatNumber(memory.usedGb, 2) + " GB" : "N/A";
-    var totalText = hasMemory ? Math.round(memory.totalGb) + " GB total" : "Memory unavailable";
+    var hasResident = hasMemory && isNumber(memory.residentGb);
+    var residentGb = hasResident ? Math.max(memory.residentGb, memory.usedGb) : memory.usedGb;
+    var hiddenResidentGb = 0;
 
-    render.renderGauge(
+    if (hasResident) {
+      hiddenResidentGb = isNumber(memory.fileGb)
+        ? Math.min(memory.fileGb, residentGb)
+        : Math.max(residentGb - memory.usedGb, 0);
+    }
+
+    var hasHiddenResident = hiddenResidentGb > 0.1;
+    var unavailableGb = hasMemory ? memory.usedGb + hiddenResidentGb : 0;
+    var pressurePercent = hasMemory ? (memory.usedGb / memory.totalGb) * 100 : 0;
+    var residentPercent = hasMemory ? (residentGb / memory.totalGb) * 100 : pressurePercent;
+    var usedText = hasMemory ? render.formatNumber(unavailableGb, 1) + " GB" : "N/A";
+    var totalText = hasHiddenResident
+      ? "(" + render.formatNumber(hiddenResidentGb, 1) + ") + " + render.formatNumber(memory.usedGb, 1)
+      : hasMemory
+        ? Math.round(memory.totalGb) + " GB total"
+        : "Memory unavailable";
+    var ariaLabel = hasMemory
+      ? "Practical unavailable memory " +
+        render.formatNumber(unavailableGb, 2) +
+        " GB, memory pressure " +
+        render.formatNumber(memory.usedGb, 2) +
+        " GB"
+      : "System memory unavailable";
+
+    if (hasHiddenResident) {
+      ariaLabel +=
+        ", hidden resident file pages " +
+        render.formatNumber(hiddenResidentGb, 2) +
+        " GB of " +
+        Math.round(memory.totalGb) +
+        " GB";
+    } else if (hasMemory) {
+      ariaLabel += " of " + Math.round(memory.totalGb) + " GB";
+    }
+
+    render.renderMemoryGauge(
       elements.gauges.systemMemory,
-      percent,
+      pressurePercent,
+      residentPercent,
       usedText,
       totalText,
-      hasMemory
-        ? "System memory usage " + render.formatNumber(memory.usedGb, 2) + " GB of " + Math.round(memory.totalGb) + " GB"
-        : "System memory unavailable",
+      ariaLabel,
     );
     render.renderHistory(
       elements.histories.systemMemory,
