@@ -40,4 +40,24 @@ On HAL, expose the server on the LAN:
 python3 server/dev_server.py --host 0.0.0.0 --port 8088
 ```
 
-The API endpoint is `http://HAL-9000.local:8088/api/snapshot`.
+Then open `http://192.168.1.123:8088`. The mDNS name
+`HAL-9000.local` may also work on networks where `.local` resolution is
+available, but it is not required by the dashboard.
+
+Private SSH tunnel preview, without using the DGX dashboard port `11000`:
+
+```sh
+ssh -N -L 8088:localhost:8088 gx10
+```
+
+Then open `http://localhost:8088`. If local port `8088` is already busy, use an
+alternate local port while still targeting HAL's `8088`:
+
+```sh
+ssh -N -L 18088:localhost:8088 gx10
+```
+
+Then open `http://localhost:18088`.
+
+The browser UI and API are served from the same origin; the frontend fetches
+`/api/snapshot`.

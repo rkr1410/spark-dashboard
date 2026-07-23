@@ -394,6 +394,117 @@
   align-items: center;
 }
 
+.metric-chart-io {
+  align-items: stretch;
+}
+
+.io-chart-stack {
+  width: 100%;
+  display: grid;
+  align-content: center;
+  gap: 12px;
+}
+
+.io-chart {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.io-chart + .io-chart {
+  padding-top: 11px;
+  border-top: 1px solid var(--color-grid);
+}
+
+.io-chart-head,
+.io-values {
+  display: flex;
+  align-items: baseline;
+}
+
+.io-chart-head {
+  min-width: 0;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.io-chart-title {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.io-values {
+  min-width: 0;
+  justify-content: flex-end;
+  gap: 14px;
+}
+
+.io-value {
+  position: relative;
+  padding-left: 10px;
+  color: var(--color-text-subtle);
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.io-value::before {
+  width: 6px;
+  height: 6px;
+  position: absolute;
+  top: 50%;
+  left: 0;
+  border-radius: 50%;
+  background: var(--io-color);
+  content: "";
+  transform: translateY(-50%);
+}
+
+.io-value strong {
+  color: var(--color-text);
+  font-size: 11px;
+}
+
+.io-value-primary {
+  --io-color: var(--color-chart);
+}
+
+.io-value-secondary {
+  --io-color: var(--color-warning);
+}
+
+.io-chart svg {
+  width: 100%;
+  height: 48px;
+  display: block;
+  border-bottom: 1px solid var(--color-grid);
+  background:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 100% 16px, 58px 100%;
+  overflow: visible;
+}
+
+.io-line {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.25;
+  vector-effect: non-scaling-stroke;
+}
+
+.io-line-primary {
+  stroke: var(--color-chart);
+}
+
+.io-line-secondary {
+  stroke: var(--color-warning);
+}
+
 .chart-grid {
   width: 100%;
   height: 126px;

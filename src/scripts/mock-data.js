@@ -23,6 +23,18 @@
         avgPct: 50,
         cores: makeCpuCores(0),
       },
+      network: {
+        rxBytesPerSec: 84000000,
+        txBytesPerSec: 2100000,
+        rxSeries: [62000000, 74000000, 69000000, 91000000, 86000000, 103000000, 94000000, 88000000, 79000000, 84000000],
+        txSeries: [1600000, 1800000, 1700000, 2300000, 1900000, 2600000, 2400000, 2000000, 2200000, 2100000],
+      },
+      disk: {
+        readBytesPerSec: 1200000000,
+        writeBytesPerSec: 640000000,
+        readSeries: [740000000, 980000000, 860000000, 1320000000, 1100000000, 1440000000, 1250000000, 1080000000, 1160000000, 1200000000],
+        writeSeries: [380000000, 520000000, 470000000, 710000000, 580000000, 760000000, 690000000, 610000000, 670000000, 640000000],
+      },
     },
     gpu: {
       utilization: {
@@ -116,6 +128,18 @@
             };
           }),
         },
+        network: {
+          rxBytesPerSec: state.system.network.rxBytesPerSec,
+          txBytesPerSec: state.system.network.txBytesPerSec,
+          rxSeries: cloneSeries(state.system.network.rxSeries),
+          txSeries: cloneSeries(state.system.network.txSeries),
+        },
+        disk: {
+          readBytesPerSec: state.system.disk.readBytesPerSec,
+          writeBytesPerSec: state.system.disk.writeBytesPerSec,
+          readSeries: cloneSeries(state.system.disk.readSeries),
+          writeSeries: cloneSeries(state.system.disk.writeSeries),
+        },
       },
       gpu: {
         utilization: {
@@ -147,12 +171,20 @@
     state.system.temp.valueC = round(wave(75, 2.1, 0.42, 1.1), 1);
     state.system.cpu.cores = makeCpuCores(tick);
     state.system.cpu.avgPct = averageCpu(state.system.cpu.cores);
+    state.system.network.rxBytesPerSec = Math.round(clamp(wave(84000000, 25000000, 0.47, 0.6), 0, Infinity));
+    state.system.network.txBytesPerSec = Math.round(clamp(wave(2100000, 900000, 0.61, 1.3), 0, Infinity));
+    state.system.disk.readBytesPerSec = Math.round(clamp(wave(1200000000, 360000000, 0.44, 2.2), 0, Infinity));
+    state.system.disk.writeBytesPerSec = Math.round(clamp(wave(640000000, 220000000, 0.53, 0.9), 0, Infinity));
     state.gpu.utilization.valuePct = Math.round(clamp(wave(50, 14, 0.38, 3.1), 0, 100));
     state.gpu.temp.valueC = round(wave(75, 2.0, 0.35, 0.4), 1);
     state.gpu.power.valueW = round(wave(70, 8, 0.58, 2.0), 1);
 
     push(state.system.memory.series, state.system.memory.usedGb);
     push(state.system.temp.series, state.system.temp.valueC);
+    push(state.system.network.rxSeries, state.system.network.rxBytesPerSec);
+    push(state.system.network.txSeries, state.system.network.txBytesPerSec);
+    push(state.system.disk.readSeries, state.system.disk.readBytesPerSec);
+    push(state.system.disk.writeSeries, state.system.disk.writeBytesPerSec);
     push(state.gpu.utilization.series, state.gpu.utilization.valuePct);
     push(state.gpu.temp.series, state.gpu.temp.valueC);
     push(state.gpu.power.series, state.gpu.power.valueW);

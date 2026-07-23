@@ -205,6 +205,49 @@
     }
   }
 
+  function renderDualHistory(
+    container,
+    primarySeries,
+    secondarySeries,
+    primaryText,
+    secondaryText,
+    ariaLabel,
+  ) {
+    if (!container) {
+      return;
+    }
+
+    var primary = Array.isArray(primarySeries) ? primarySeries : [];
+    var secondary = Array.isArray(secondarySeries) ? secondarySeries : [];
+    var combined = primary.concat(secondary).filter(function (value) {
+      return typeof value === "number" && Number.isFinite(value);
+    });
+    var maxValue = combined.length ? Math.max.apply(null, combined) : 0;
+    var scaleMax = Math.max(maxValue * 1.12, 1);
+    var options = {
+      width: 360,
+      height: 48,
+      min: 0,
+      max: scaleMax,
+      paddingTop: 4,
+      paddingBottom: 5,
+    };
+    var primaryLine = container.querySelector("[data-io-primary-line]");
+    var secondaryLine = container.querySelector("[data-io-secondary-line]");
+
+    setText(container.querySelector("[data-io-primary-value]"), primaryText);
+    setText(container.querySelector("[data-io-secondary-value]"), secondaryText);
+    container.setAttribute("aria-label", ariaLabel);
+
+    if (primaryLine) {
+      primaryLine.setAttribute("points", pointsToString(toCoordinates(primary, options)));
+    }
+
+    if (secondaryLine) {
+      secondaryLine.setAttribute("points", pointsToString(toCoordinates(secondary, options)));
+    }
+  }
+
   function renderGauge(container, percent, mainText, subText, ariaLabel) {
     if (!container) {
       return;
@@ -256,6 +299,7 @@
     renderGauge: renderGauge,
     renderMemoryGauge: renderMemoryGauge,
     renderHistory: renderHistory,
+    renderDualHistory: renderDualHistory,
     renderMetricValue: renderMetricValue,
     renderSparkline: renderSparkline,
   };

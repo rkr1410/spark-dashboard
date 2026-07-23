@@ -25,8 +25,11 @@
       gpuUtilization: document.querySelector('[data-gauge="gpu.utilization"]'),
     },
     histories: {
-      systemMemory: document.querySelector('[data-history="system.memory"]'),
       gpuUtilization: document.querySelector('[data-history="gpu.utilization"]'),
+    },
+    ioHistories: {
+      network: document.querySelector('[data-io-history="system.network"]'),
+      disk: document.querySelector('[data-io-history="system.disk"]'),
     },
   };
   var telemetryScales = {
@@ -144,6 +147,8 @@
     var systemMemory = system.memory || {};
     var systemTemp = system.temp || {};
     var systemCpu = system.cpu || {};
+    var systemNetwork = system.network || {};
+    var systemDisk = system.disk || {};
     var gpu = snapshot.gpu || {};
     var gpuUtilization = gpu.utilization || {};
     var gpuTemp = gpu.temp || {};
@@ -166,6 +171,14 @@
         cpu: {
           avgPct: asNumber(systemCpu.avgPct),
           cores: normalizeCpuCores(systemCpu.cores),
+        },
+        network: {
+          rxBytesPerSec: asNumber(systemNetwork.rxBytesPerSec),
+          txBytesPerSec: asNumber(systemNetwork.txBytesPerSec),
+        },
+        disk: {
+          readBytesPerSec: asNumber(systemDisk.readBytesPerSec),
+          writeBytesPerSec: asNumber(systemDisk.writeBytesPerSec),
         },
       },
       gpu: {
@@ -192,6 +205,22 @@
     normalized.system.cpu.avgPct = numberOrFallback(
       normalized.system.cpu.avgPct,
       averageCpu(normalized.system.cpu.cores),
+    );
+    normalized.system.network.rxSeries = pushLiveValue(
+      "system.network.rx",
+      normalized.system.network.rxBytesPerSec,
+    );
+    normalized.system.network.txSeries = pushLiveValue(
+      "system.network.tx",
+      normalized.system.network.txBytesPerSec,
+    );
+    normalized.system.disk.readSeries = pushLiveValue(
+      "system.disk.read",
+      normalized.system.disk.readBytesPerSec,
+    );
+    normalized.system.disk.writeSeries = pushLiveValue(
+      "system.disk.write",
+      normalized.system.disk.writeBytesPerSec,
     );
     normalized.gpu.utilization.series = pushLiveValue(
       "gpu.utilization",
@@ -338,12 +367,50 @@
       totalText,
       ariaLabel,
     );
-    render.renderHistory(
-      elements.histories.systemMemory,
-      memory.series,
-      numberOrFallback(memory.totalGb, 1),
-      hasMemory ? Math.round(memory.totalGb) + " GB" : "N/A",
-      hasMemory ? "System memory history for the last minute" : "System memory unavailable",
+  }
+
+  function formatThroughput(value) {
+    if (!isNumber(value)) {
+      return "N/A";
+    }
+
+    var units = ["B/s", "KB/s", "MB/s", "GB/s", "TB/s"];
+    var scaled = Math.max(value, 0);
+    var unitIndex = 0;
+
+    while (scaled >= 1000 && unitIndex < units.length - 1) {
+      scaled /= 1000;
+      unitIndex += 1;
+    }
+
+    var digits = scaled >= 100 || unitIndex === 0 ? 0 : scaled >= 10 ? 1 : 2;
+
+    return render.formatNumber(scaled, digits) + " " + units[unitIndex];
+  }
+
+  function renderSystemIo(snapshot) {
+    var network = snapshot.system.network || {};
+    var disk = snapshot.system.disk || {};
+    var rxText = formatThroughput(network.rxBytesPerSec);
+    var txText = formatThroughput(network.txBytesPerSec);
+    var readText = formatThroughput(disk.readBytesPerSec);
+    var writeText = formatThroughput(disk.writeBytesPerSec);
+
+    render.renderDualHistory(
+      elements.ioHistories.network,
+      network.rxSeries,
+      network.txSeries,
+      rxText,
+      txText,
+      "Network receive " + rxText + " and transmit " + txText + " history for the last minute",
+    );
+    render.renderDualHistory(
+      elements.ioHistories.disk,
+      disk.readSeries,
+      disk.writeSeries,
+      readText,
+      writeText,
+      "SSD read " + readText + " and write " + writeText + " history for the last minute",
     );
   }
 
@@ -371,6 +438,7 @@
   function renderSnapshot(snapshot) {
     renderTelemetry(snapshot);
     renderSystemMemory(snapshot);
+    renderSystemIo(snapshot);
     renderGpuUtilization(snapshot);
   }
 

@@ -22,7 +22,11 @@ CPU_CORE_COUNT = 20
 THERMAL_ROOT = Path("/sys/class/thermal")
 MEMINFO_PATH = Path("/proc/meminfo")
 PROC_STAT_PATH = Path("/proc/stat")
+NET_DEV_PATH = Path("/proc/net/dev")
+DISKSTATS_PATH = Path("/proc/diskstats")
+SYS_BLOCK_ROOT = Path("/sys/block")
 CPU_PREVIOUS: dict[int, tuple[int, int]] = {}
+IO_PREVIOUS: dict[str, tuple[float, int, int]] = {}
 PROCESS_MEMORY_CACHE_TTL_SECONDS = 5.0
 PROCESS_MEMORY_CACHE: tuple[float, dict[str, Any]] | None = None
 NVML_SUCCESS = 0
@@ -48,6 +52,8 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
     process_memory = read_cuda_process_memory()
     thermal = read_system_thermal()
     cpu = read_cpu_utilization()
+    network = read_network_io()
+    disk = read_disk_io()
     gpu = read_gpu_nvml()
 
     return {
@@ -58,6 +64,8 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
             "processMemory": process_memory["source"],
             "systemTemp": thermal["source"],
             "systemCpu": cpu["source"],
+            "systemNetwork": network["source"],
+            "systemDisk": disk["source"],
             "gpu": gpu["source"],
         },
         "system": {
@@ -78,6 +86,14 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
             "cpu": {
                 "avgPct": cpu["avgPct"],
                 "cores": cpu["cores"],
+            },
+            "network": {
+                "rxBytesPerSec": network["rxBytesPerSec"],
+                "txBytesPerSec": network["txBytesPerSec"],
+            },
+            "disk": {
+                "readBytesPerSec": disk["readBytesPerSec"],
+                "writeBytesPerSec": disk["writeBytesPerSec"],
             },
             "power": {
                 "valueW": None,
@@ -445,6 +461,122 @@ def read_cpu_times() -> dict[int, tuple[int, int]]:
     return times
 
 
+def read_network_io() -> dict[str, Any]:
+    rx_bytes = 0
+    tx_bytes = 0
+    interface_count = 0
+
+    try:
+        lines = NET_DEV_PATH.read_text(encoding="utf-8").splitlines()[2:]
+    except OSError:
+        return unavailable_io("rxBytesPerSec", "txBytesPerSec")
+
+    for line in lines:
+        interface, separator, values_text = line.partition(":")
+
+        if not separator or interface.strip() == "lo":
+            continue
+
+        values = values_text.split()
+
+        if len(values) < 9 or not values[0].isdigit() or not values[8].isdigit():
+            continue
+
+        rx_bytes += int(values[0])
+        tx_bytes += int(values[8])
+        interface_count += 1
+
+    if interface_count == 0:
+        return unavailable_io("rxBytesPerSec", "txBytesPerSec")
+
+    rx_rate, tx_rate = rates_from_counters("network", rx_bytes, tx_bytes)
+
+    return {
+        "rxBytesPerSec": rx_rate,
+        "txBytesPerSec": tx_rate,
+        "source": "proc_net_dev",
+    }
+
+
+def read_disk_io() -> dict[str, Any]:
+    sectors_read = 0
+    sectors_written = 0
+    device_count = 0
+
+    try:
+        lines = DISKSTATS_PATH.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return unavailable_io("readBytesPerSec", "writeBytesPerSec")
+
+    for line in lines:
+        parts = line.split()
+
+        if len(parts) < 10:
+            continue
+
+        device = parts[2]
+
+        if not is_physical_block_device(device):
+            continue
+
+        if not parts[5].isdigit() or not parts[9].isdigit():
+            continue
+
+        sectors_read += int(parts[5])
+        sectors_written += int(parts[9])
+        device_count += 1
+
+    if device_count == 0:
+        return unavailable_io("readBytesPerSec", "writeBytesPerSec")
+
+    # Linux diskstats always reports sectors in 512-byte units.
+    read_rate, write_rate = rates_from_counters(
+        "disk",
+        sectors_read * 512,
+        sectors_written * 512,
+    )
+
+    return {
+        "readBytesPerSec": read_rate,
+        "writeBytesPerSec": write_rate,
+        "source": "proc_diskstats",
+    }
+
+
+def is_physical_block_device(name: str) -> bool:
+    excluded_prefixes = ("loop", "ram", "fd", "sr", "dm-", "md")
+
+    return not name.startswith(excluded_prefixes) and (SYS_BLOCK_ROOT / name).exists()
+
+
+def rates_from_counters(key: str, first: int, second: int) -> tuple[float, float]:
+    now = time.monotonic()
+    previous = IO_PREVIOUS.get(key)
+    IO_PREVIOUS[key] = (now, first, second)
+
+    if previous is None:
+        return 0.0, 0.0
+
+    previous_time, previous_first, previous_second = previous
+    elapsed = now - previous_time
+
+    if elapsed <= 0:
+        return 0.0, 0.0
+
+    first_delta = max(first - previous_first, 0)
+    second_delta = max(second - previous_second, 0)
+
+    return round(first_delta / elapsed, 1), round(second_delta / elapsed, 1)
+
+
+def unavailable_io(first_key: str, second_key: str) -> dict[str, Any]:
+    return {
+        first_key: None,
+        second_key: None,
+        "source": "unavailable",
+    }
+
+
 def clamp_pct(value: float) -> float:
     return min(max(value, 0.0), 100.0)
 
@@ -625,6 +757,8 @@ def mock_snapshot() -> dict[str, Any]:
             "processMemory": "mock",
             "systemTemp": "mock",
             "systemCpu": "mock",
+            "systemNetwork": "mock",
+            "systemDisk": "mock",
             "gpu": "mock",
         },
         "system": {
@@ -654,6 +788,14 @@ def mock_snapshot() -> dict[str, Any]:
             "cpu": {
                 "avgPct": average_cpu(cpu_cores),
                 "cores": cpu_cores,
+            },
+            "network": {
+                "rxBytesPerSec": round(max(84_000_000 + math.sin(t * 0.47 + 0.6) * 25_000_000, 0)),
+                "txBytesPerSec": round(max(2_100_000 + math.sin(t * 0.61 + 1.3) * 900_000, 0)),
+            },
+            "disk": {
+                "readBytesPerSec": round(max(1_200_000_000 + math.sin(t * 0.44 + 2.2) * 360_000_000, 0)),
+                "writeBytesPerSec": round(max(640_000_000 + math.sin(t * 0.53 + 0.9) * 220_000_000, 0)),
             },
         },
         "gpu": {

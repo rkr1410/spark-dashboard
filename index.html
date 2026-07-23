@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spark Dashboard</title>
-    <link rel="stylesheet" href="./src/styles/theme.css?v=20260622-memory-hidden-5" />
-    <link rel="stylesheet" href="./src/styles/base.css?v=20260622-memory-hidden-5" />
-    <link rel="stylesheet" href="./src/styles/layout.css?v=20260622-memory-hidden-5" />
+    <link rel="stylesheet" href="./src/styles/theme.css?v=20260723-system-io-1" />
+    <link rel="stylesheet" href="./src/styles/base.css?v=20260723-system-io-1" />
+    <link rel="stylesheet" href="./src/styles/layout.css?v=20260723-system-io-1" />
   </head>
   <body>
     <header class="topbar">
@@ -96,28 +96,34 @@
               </div>
             </div>
           </div>
-          <div class="metric-chart">
-            <div class="history-chart" data-history="system.memory" role="img" aria-label="System memory history for the last minute">
-              <div class="history-labels">
-                <span data-history-max>128 GB</span>
-                <span>Last 60s</span>
+          <div class="metric-chart metric-chart-io">
+            <div class="io-chart-stack" aria-label="System input and output history">
+              <div class="io-chart" data-io-history="system.network" role="img" aria-label="Network receive and transmit history for the last minute">
+                <div class="io-chart-head">
+                  <span class="io-chart-title">Network I/O</span>
+                  <div class="io-values" aria-hidden="true">
+                    <span class="io-value io-value-primary">RX <strong data-io-primary-value>0 B/s</strong></span>
+                    <span class="io-value io-value-secondary">TX <strong data-io-secondary-value>0 B/s</strong></span>
+                  </div>
+                </div>
+                <svg viewBox="0 0 360 48" preserveAspectRatio="none" aria-hidden="true">
+                  <polyline class="io-line io-line-primary" data-io-primary-line points="0,43 40,43 80,43 120,43 160,43 200,43 240,43 280,43 320,43 360,43" />
+                  <polyline class="io-line io-line-secondary" data-io-secondary-line points="0,43 40,43 80,43 120,43 160,43 200,43 240,43 280,43 320,43 360,43" />
+                </svg>
               </div>
-              <svg viewBox="0 0 360 126" preserveAspectRatio="none" aria-hidden="true">
-                <polygon class="history-area" data-history-area points="0,112 0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107 360,112" />
-                <polyline class="history-line" data-history-line points="0,108 40,109 80,108 120,109 160,107 200,108 240,107 280,108 320,106 360,107" />
-                <g class="history-points" data-history-points>
-                  <circle cx="0" cy="108" r="3" />
-                  <circle cx="40" cy="109" r="3" />
-                  <circle cx="80" cy="108" r="3" />
-                  <circle cx="120" cy="109" r="3" />
-                  <circle cx="160" cy="107" r="3" />
-                  <circle cx="200" cy="108" r="3" />
-                  <circle cx="240" cy="107" r="3" />
-                  <circle cx="280" cy="108" r="3" />
-                  <circle cx="320" cy="106" r="3" />
-                  <circle cx="360" cy="107" r="3" />
-                </g>
-              </svg>
+              <div class="io-chart" data-io-history="system.disk" role="img" aria-label="SSD read and write history for the last minute">
+                <div class="io-chart-head">
+                  <span class="io-chart-title">SSD I/O</span>
+                  <div class="io-values" aria-hidden="true">
+                    <span class="io-value io-value-primary">R <strong data-io-primary-value>0 B/s</strong></span>
+                    <span class="io-value io-value-secondary">W <strong data-io-secondary-value>0 B/s</strong></span>
+                  </div>
+                </div>
+                <svg viewBox="0 0 360 48" preserveAspectRatio="none" aria-hidden="true">
+                  <polyline class="io-line io-line-primary" data-io-primary-line points="0,43 40,43 80,43 120,43 160,43 200,43 240,43 280,43 320,43 360,43" />
+                  <polyline class="io-line io-line-secondary" data-io-secondary-line points="0,43 40,43 80,43 120,43 160,43 200,43 240,43 280,43 320,43 360,43" />
+                </svg>
+              </div>
             </div>
           </div>
         </section>
@@ -215,8 +221,8 @@
         </section>
       </section>
     </main>
-    <script src="./src/scripts/mock-data.js?v=20260622-memory-hidden-5" defer></script>
-    <script src="./src/scripts/render.js?v=20260622-memory-hidden-5" defer></script>
-    <script src="./src/scripts/app.js?v=20260622-memory-hidden-5" defer></script>
+    <script src="./src/scripts/mock-data.js?v=20260723-system-io-1" defer></script>
+    <script src="./src/scripts/render.js?v=20260723-system-io-1" defer></script>
+    <script src="./src/scripts/app.js?v=20260723-system-io-1" defer></script>
   </body>
 </html>
