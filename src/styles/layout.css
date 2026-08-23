@@ -581,7 +581,8 @@
     minmax(136px, 176px)
     minmax(116px, 158px)
     minmax(72px, 92px)
-    42px;
+    42px
+    minmax(54px, 70px);
   gap: 12px;
   justify-content: start;
 }
@@ -600,6 +601,10 @@
 .llm-slot-compact {
   width: 42px;
   padding: 0;
+}
+
+.llm-slot-time {
+  padding: 0 10px;
 }
 
 .llm-stat {

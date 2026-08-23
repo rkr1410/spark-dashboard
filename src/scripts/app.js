@@ -9,6 +9,8 @@
   var PREFILL_DELTA_MIN_TOKENS = 128;
   var inferenceDisplay = {
     lastActiveAt: 0,
+    activeStartedAt: 0,
+    lastDurationMs: null,
     lastValues: null,
     prefixCacheTokens: 0,
     prefixComputeTokens: 0,
@@ -49,6 +51,7 @@
         draft: document.querySelector('[data-inference-tile="draft"]'),
         prefix: document.querySelector('[data-inference-tile="prefix"]'),
         requests: document.querySelector('[data-inference-tile="requests"]'),
+        duration: document.querySelector('[data-inference-tile="duration"]'),
       },
       stats: {
         throughput: document.querySelector('[data-inference-stat="throughput"]'),
@@ -56,6 +59,7 @@
         draft: document.querySelector('[data-inference-stat="draft"]'),
         prefix: document.querySelector('[data-inference-stat="prefix"]'),
         requests: document.querySelector('[data-inference-stat="requests"]'),
+        duration: document.querySelector('[data-inference-stat="duration"]'),
       },
     },
   };
@@ -169,6 +173,28 @@
     var percent = value <= 1 ? value * 100 : value;
 
     return Math.round(clamp(percent, 0, 100)) + "%";
+  }
+
+  function formatDuration(valueMs) {
+    if (!isNumber(valueMs)) {
+      return "--";
+    }
+
+    var totalSeconds = Math.max(Math.floor(valueMs / 1000), 0);
+
+    if (totalSeconds < 60) {
+      return totalSeconds + "s";
+    }
+
+    var hours = Math.floor(totalSeconds / 3600);
+    var minutes = Math.floor((totalSeconds % 3600) / 60);
+    var seconds = totalSeconds % 60;
+
+    if (hours > 0) {
+      return hours + ":" + String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0");
+    }
+
+    return minutes + ":" + String(seconds).padStart(2, "0");
   }
 
   function requestCount(value) {
@@ -556,6 +582,17 @@
 
   function resetInferenceDisplay() {
     inferenceDisplay.lastActiveAt = 0;
+    inferenceDisplay.activeStartedAt = 0;
+    inferenceDisplay.lastDurationMs = null;
+    inferenceDisplay.lastValues = null;
+    inferenceDisplay.prefixCacheTokens = 0;
+    inferenceDisplay.prefixComputeTokens = 0;
+    inferenceDisplay.prefixHitRate = null;
+  }
+
+  function clearInferenceActivePeriod() {
+    inferenceDisplay.lastActiveAt = 0;
+    inferenceDisplay.activeStartedAt = 0;
     inferenceDisplay.lastValues = null;
     inferenceDisplay.prefixCacheTokens = 0;
     inferenceDisplay.prefixComputeTokens = 0;
@@ -584,7 +621,7 @@
     return inferenceDisplay.prefixHitRate;
   }
 
-  function buildInferenceValues(inference, prefixHitRate) {
+  function buildInferenceValues(inference, prefixHitRate, durationMs) {
     var running = requestCount(inference.numRunningReqs) || 0;
     var queue = requestCount(inference.numQueueReqs) || 0;
     var useGlobalKv = running > 1 || queue > 0;
@@ -608,6 +645,7 @@
         : inferenceDisplay.lastValues && inferenceDisplay.lastValues.prefix
           ? inferenceDisplay.lastValues.prefix
           : "--",
+      duration: formatDuration(durationMs),
     };
   }
 
@@ -640,7 +678,7 @@
 
     if (!inference.available) {
       resetInferenceDisplay();
-      performanceKeys.concat(["requests"]).forEach(function (key) {
+      performanceKeys.concat(["requests", "duration"]).forEach(function (key) {
         setText(statElements[key], "--");
         setInferenceState(tiles[key], "offline");
       });
@@ -653,7 +691,16 @@
     var state = "live";
 
     if (active) {
-      values = buildInferenceValues(inference, updatePrefixHitAggregate(inference));
+      if (!inferenceDisplay.activeStartedAt) {
+        inferenceDisplay.activeStartedAt = now;
+      }
+
+      inferenceDisplay.lastDurationMs = now - inferenceDisplay.activeStartedAt;
+      values = buildInferenceValues(
+        inference,
+        updatePrefixHitAggregate(inference),
+        inferenceDisplay.lastDurationMs,
+      );
       inferenceDisplay.lastValues = values;
       inferenceDisplay.lastActiveAt = now;
     } else if (inferenceDisplay.lastValues && inferenceDisplay.lastActiveAt) {
@@ -668,7 +715,7 @@
         values = inferenceDisplay.lastValues;
         state = "more-dim";
       } else {
-        resetInferenceDisplay();
+        clearInferenceActivePeriod();
       }
     }
 
@@ -681,6 +728,8 @@
 
     setText(statElements.requests, running == null ? "--" : String(running));
     setInferenceState(tiles.requests, running == null ? "offline" : displayState);
+    setText(statElements.duration, formatDuration(inferenceDisplay.lastDurationMs || 0));
+    setInferenceState(tiles.duration, displayState);
   }
 
   function renderSnapshot(snapshot) {
