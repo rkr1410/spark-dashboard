@@ -3,6 +3,13 @@
   var render = window.SparkRender;
   var SERIES_LIMIT = 10;
   var liveSeries = {};
+  var INFERENCE_IDLE_DIM_MS = 2000;
+  var INFERENCE_IDLE_MORE_DIM_MS = 10000;
+  var INFERENCE_IDLE_CLEAR_MS = 20000;
+  var inferenceDisplay = {
+    lastActiveAt: 0,
+    lastValues: null,
+  };
 
   var elements = {
     updatedAt: document.querySelector("[data-updated-at]"),
@@ -30,6 +37,22 @@
     ioHistories: {
       network: document.querySelector('[data-io-history="system.network"]'),
       disk: document.querySelector('[data-io-history="system.disk"]'),
+    },
+    inference: {
+      tiles: {
+        throughput: document.querySelector('[data-inference-tile="throughput"]'),
+        context: document.querySelector('[data-inference-tile="context"]'),
+        draft: document.querySelector('[data-inference-tile="draft"]'),
+        prefix: document.querySelector('[data-inference-tile="prefix"]'),
+        requests: document.querySelector('[data-inference-tile="requests"]'),
+      },
+      stats: {
+        throughput: document.querySelector('[data-inference-stat="throughput"]'),
+        context: document.querySelector('[data-inference-stat="context"]'),
+        draft: document.querySelector('[data-inference-stat="draft"]'),
+        prefix: document.querySelector('[data-inference-stat="prefix"]'),
+        requests: document.querySelector('[data-inference-stat="requests"]'),
+      },
     },
   };
   var telemetryScales = {
@@ -85,6 +108,67 @@
 
   function percentText(value) {
     return isNumber(value) ? Math.round(value) + "%" : "N/A";
+  }
+
+  function setText(element, text) {
+    if (element) {
+      element.textContent = text;
+    }
+  }
+
+  function formatTokenCount(value) {
+    if (!isNumber(value)) {
+      return "--";
+    }
+
+    if (value >= 1000) {
+      var scaled = value / 1000;
+      var digits = scaled >= 100 ? 0 : 1;
+
+      return render.formatNumber(scaled, digits) + "k";
+    }
+
+    return String(Math.round(value));
+  }
+
+  function formatContextLimit(value) {
+    if (!isNumber(value)) {
+      return "--";
+    }
+
+    return formatTokenCount(value);
+  }
+
+  function formatTokPerSecond(value) {
+    if (!isNumber(value)) {
+      return "--";
+    }
+
+    var digits = value >= 100 ? 0 : 1;
+
+    return render.formatNumber(Math.max(value, 0), digits) + " tok/s";
+  }
+
+  function formatSpecRate(value) {
+    return isNumber(value) ? render.formatNumber(value, 2) : "--";
+  }
+
+  function formatSpecLength(value) {
+    return isNumber(value) ? render.formatNumber(value, 1) : "--";
+  }
+
+  function formatRatioPercent(value) {
+    if (!isNumber(value)) {
+      return "--";
+    }
+
+    var percent = value <= 1 ? value * 100 : value;
+
+    return Math.round(clamp(percent, 0, 100)) + "%";
+  }
+
+  function requestCount(value) {
+    return isNumber(value) ? Math.round(Math.max(value, 0)) : null;
   }
 
   function normalizeCpuCores(cores) {
@@ -153,6 +237,7 @@
     var gpuUtilization = gpu.utilization || {};
     var gpuTemp = gpu.temp || {};
     var gpuPower = gpu.power || {};
+    var inference = snapshot.inference || {};
     var normalized = {
       system: {
         memory: {
@@ -194,6 +279,23 @@
           valueW: asNumber(gpuPower.valueW),
           maxW: asNumber(gpuPower.maxW),
         },
+      },
+      inference: {
+        available: inference.available === true,
+        runtime: inference.runtime || null,
+        model: inference.model || null,
+        contextTokens: asNumber(inference.contextTokens),
+        genThroughput: asNumber(inference.genThroughput),
+        numUsedTokens: asNumber(inference.numUsedTokens),
+        maxTotalNumTokens: asNumber(inference.maxTotalNumTokens),
+        specAcceptRate: asNumber(inference.specAcceptRate),
+        specAcceptLength: asNumber(inference.specAcceptLength),
+        prefixHitRate: asNumber(inference.prefixHitRate),
+        cacheHitRate: asNumber(inference.cacheHitRate),
+        prefillCacheTokens: asNumber(inference.prefillCacheTokens),
+        prefillComputeTokens: asNumber(inference.prefillComputeTokens),
+        numRunningReqs: asNumber(inference.numRunningReqs),
+        numQueueReqs: asNumber(inference.numQueueReqs),
       },
     };
 
@@ -435,11 +537,114 @@
     );
   }
 
+  function resolvePrefixHitRate(inference) {
+    if (isNumber(inference.prefixHitRate)) {
+      return inference.prefixHitRate;
+    }
+
+    if (inferenceDisplay.lastValues && inferenceDisplay.lastValues.prefix !== "--") {
+      return null;
+    }
+
+    return inference.cacheHitRate;
+  }
+
+  function buildInferenceValues(inference) {
+    var running = requestCount(inference.numRunningReqs) || 0;
+    var queue = requestCount(inference.numQueueReqs) || 0;
+    var useGlobalKv = running > 1 || queue > 0;
+    var contextDenominator = useGlobalKv
+      ? inference.maxTotalNumTokens
+      : inference.contextTokens;
+    var contextLimitText = useGlobalKv
+      ? formatTokenCount(contextDenominator)
+      : formatContextLimit(contextDenominator);
+
+    return {
+      throughput: formatTokPerSecond(inference.genThroughput),
+      context: isNumber(inference.numUsedTokens) && isNumber(contextDenominator)
+        ? formatTokenCount(inference.numUsedTokens) + " / " + contextLimitText
+        : "--",
+      draft: isNumber(inference.specAcceptRate) && isNumber(inference.specAcceptLength)
+        ? formatSpecRate(inference.specAcceptRate) + " / " + formatSpecLength(inference.specAcceptLength)
+        : "--",
+      prefix: isNumber(resolvePrefixHitRate(inference))
+        ? formatRatioPercent(resolvePrefixHitRate(inference))
+        : inferenceDisplay.lastValues && inferenceDisplay.lastValues.prefix
+          ? inferenceDisplay.lastValues.prefix
+          : "--",
+    };
+  }
+
+  function inferenceIsActive(inference) {
+    var running = requestCount(inference.numRunningReqs) || 0;
+
+    return running > 0 || (isNumber(inference.genThroughput) && inference.genThroughput > 0);
+  }
+
+  function setInferenceState(tile, state) {
+    if (!tile) {
+      return;
+    }
+
+    tile.classList.toggle("is-dim", state === "dim");
+    tile.classList.toggle("is-more-dim", state === "more-dim");
+    tile.classList.toggle("is-offline", state === "offline");
+  }
+
+  function renderInference(snapshot) {
+    var inference = snapshot.inference || {};
+    var statElements = elements.inference.stats;
+    var tiles = elements.inference.tiles;
+    var performanceKeys = ["throughput", "context", "draft", "prefix"];
+    var running = requestCount(inference.numRunningReqs);
+
+    if (!inference.available) {
+      performanceKeys.concat(["requests"]).forEach(function (key) {
+        setText(statElements[key], "--");
+        setInferenceState(tiles[key], "offline");
+      });
+      return;
+    }
+
+    var now = Date.now();
+    var active = inferenceIsActive(inference);
+    var values = null;
+    var state = "live";
+
+    if (active) {
+      values = buildInferenceValues(inference);
+      inferenceDisplay.lastValues = values;
+      inferenceDisplay.lastActiveAt = now;
+    } else if (inferenceDisplay.lastValues && inferenceDisplay.lastActiveAt) {
+      var idleMs = now - inferenceDisplay.lastActiveAt;
+
+      if (idleMs <= INFERENCE_IDLE_DIM_MS) {
+        values = inferenceDisplay.lastValues;
+      } else if (idleMs <= INFERENCE_IDLE_MORE_DIM_MS) {
+        values = inferenceDisplay.lastValues;
+        state = "dim";
+      } else if (idleMs <= INFERENCE_IDLE_CLEAR_MS) {
+        values = inferenceDisplay.lastValues;
+        state = "more-dim";
+      }
+    }
+
+    performanceKeys.forEach(function (key) {
+      setText(statElements[key], values ? values[key] : "--");
+      setInferenceState(tiles[key], values ? state : "offline");
+    });
+
+    setText(statElements.requests, running == null ? "--" : String(running));
+    setInferenceState(tiles.requests, running == null ? "offline" : "live");
+  }
+
   function renderSnapshot(snapshot) {
     renderTelemetry(snapshot);
     renderSystemMemory(snapshot);
     renderSystemIo(snapshot);
     renderGpuUtilization(snapshot);
+    renderInference(snapshot);
   }
 
   function tick() {

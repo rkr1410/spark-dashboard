@@ -12,6 +12,8 @@ import ctypes.util
 import math
 import subprocess
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,10 +27,13 @@ PROC_STAT_PATH = Path("/proc/stat")
 NET_DEV_PATH = Path("/proc/net/dev")
 DISKSTATS_PATH = Path("/proc/diskstats")
 SYS_BLOCK_ROOT = Path("/sys/block")
+SGLANG_METRICS_URL = "http://localhost:8000/metrics"
+SGLANG_CONTEXT_TOKENS = 262_144
 CPU_PREVIOUS: dict[int, tuple[int, int]] = {}
 IO_PREVIOUS: dict[str, tuple[float, int, int]] = {}
 PROCESS_MEMORY_CACHE_TTL_SECONDS = 5.0
 PROCESS_MEMORY_CACHE: tuple[float, dict[str, Any]] | None = None
+SGLANG_PREFILL_COUNTERS_PREVIOUS: tuple[float, float] | None = None
 NVML_SUCCESS = 0
 NVML_TEMPERATURE_GPU = 0
 NVML: ctypes.CDLL | None = None
@@ -55,6 +60,7 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
     network = read_network_io()
     disk = read_disk_io()
     gpu = read_gpu_nvml()
+    inference = read_sglang_metrics()
 
     return {
         "timestamp": utc_timestamp(),
@@ -67,6 +73,7 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
             "systemNetwork": network["source"],
             "systemDisk": disk["source"],
             "gpu": gpu["source"],
+            "inference": inference["source"],
         },
         "system": {
             "memory": {
@@ -115,6 +122,7 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
                 "maxW": gpu["powerLimitW"],
             },
         },
+        "inference": inference,
     }
 
 
@@ -144,6 +152,12 @@ def build_startup_report(use_mock: bool = False) -> list[str]:
             f"limit {format_w(gpu['power']['maxW'])}, "
             f"source {source['gpu']}"
         ),
+        (
+            "  initial inference: "
+            f"source {source.get('inference', 'unavailable')}, "
+            f"runtime {snapshot.get('inference', {}).get('runtime', 'N/A')}, "
+            f"available {snapshot.get('inference', {}).get('available', False)}"
+        ),
     ]
 
 
@@ -172,6 +186,183 @@ def read_system_memory() -> dict[str, Any]:
         "totalGb": round(total_kb / 1_000_000) or PROJECTED_TOTAL_GB,
         "source": "proc_meminfo",
     }
+
+
+def read_sglang_metrics() -> dict[str, Any]:
+    global SGLANG_PREFILL_COUNTERS_PREVIOUS
+
+    try:
+        with urllib.request.urlopen(SGLANG_METRICS_URL, timeout=0.8) as response:
+            body = response.read(1_000_000).decode("utf-8", errors="replace")
+    except (OSError, urllib.error.URLError, TimeoutError):
+        return empty_inference("sglang_metrics_unavailable")
+
+    values = parse_prometheus_metrics(
+        body,
+        {
+            "sglang:gen_throughput": "genThroughput",
+            "sglang:num_used_tokens": "numUsedTokens",
+            "sglang:max_total_num_tokens": "maxTotalNumTokens",
+            "sglang:spec_accept_rate": "specAcceptRate",
+            "sglang:spec_accept_length": "specAcceptLength",
+            "sglang:cache_hit_rate": "cacheHitRate",
+            "sglang:num_running_reqs": "numRunningReqs",
+            "sglang:num_queue_reqs": "numQueueReqs",
+        },
+    )
+    realtime_tokens = parse_sglang_realtime_tokens(body)
+    prefix_hit_rate = prefix_hit_rate_from_counters(
+        realtime_tokens.get("prefill_cache"),
+        realtime_tokens.get("prefill_compute"),
+    )
+
+    required = ("genThroughput", "numRunningReqs", "numQueueReqs")
+
+    if any(values.get(key) is None for key in required):
+        return empty_inference("sglang_metrics_missing")
+
+    return {
+        "available": True,
+        "runtime": "sglang",
+        "model": parse_prometheus_label(body, "model_name") or "qwen3.8-27b",
+        "contextTokens": SGLANG_CONTEXT_TOKENS,
+        "genThroughput": values.get("genThroughput"),
+        "numUsedTokens": values.get("numUsedTokens"),
+        "maxTotalNumTokens": values.get("maxTotalNumTokens"),
+        "specAcceptRate": values.get("specAcceptRate"),
+        "specAcceptLength": values.get("specAcceptLength"),
+        "prefixHitRate": prefix_hit_rate,
+        "cacheHitRate": values.get("cacheHitRate"),
+        "prefillCacheTokens": realtime_tokens.get("prefill_cache"),
+        "prefillComputeTokens": realtime_tokens.get("prefill_compute"),
+        "numRunningReqs": values.get("numRunningReqs"),
+        "numQueueReqs": values.get("numQueueReqs"),
+        "source": "sglang_metrics",
+    }
+
+
+def empty_inference(source: str) -> dict[str, Any]:
+    return {
+        "available": False,
+        "runtime": "sglang",
+        "model": None,
+        "contextTokens": SGLANG_CONTEXT_TOKENS,
+        "genThroughput": None,
+        "numUsedTokens": None,
+        "maxTotalNumTokens": None,
+        "specAcceptRate": None,
+        "specAcceptLength": None,
+        "prefixHitRate": None,
+        "cacheHitRate": None,
+        "prefillCacheTokens": None,
+        "prefillComputeTokens": None,
+        "numRunningReqs": None,
+        "numQueueReqs": None,
+        "source": source,
+    }
+
+
+def parse_prometheus_metrics(body: str, names: dict[str, str]) -> dict[str, float | None]:
+    values: dict[str, float | None] = {target: None for target in names.values()}
+
+    for line in body.splitlines():
+        if not line or line.startswith("#"):
+            continue
+
+        metric, _, rest = line.partition(" ")
+        metric_name = metric.split("{", 1)[0]
+        target = names.get(metric_name)
+
+        if target is None:
+            continue
+
+        value_text = rest.strip().split(" ", 1)[0]
+        value = parse_float(value_text)
+
+        if value is not None:
+            values[target] = value
+
+    return values
+
+
+def parse_sglang_realtime_tokens(body: str) -> dict[str, float]:
+    counters: dict[str, float] = {}
+
+    for line in body.splitlines():
+        if not line.startswith("sglang:realtime_tokens_total{"):
+            continue
+
+        mode = parse_metric_label(line, "mode")
+
+        if mode not in {"prefill_cache", "prefill_compute"}:
+            continue
+
+        _, _, rest = line.partition(" ")
+        value_text = rest.strip().split(" ", 1)[0]
+        value = parse_float(value_text)
+
+        if value is not None:
+            counters[mode] = value
+
+    return counters
+
+
+def prefix_hit_rate_from_counters(
+    prefill_cache: float | None,
+    prefill_compute: float | None,
+) -> float | None:
+    global SGLANG_PREFILL_COUNTERS_PREVIOUS
+
+    if prefill_cache is None or prefill_compute is None:
+        return None
+
+    previous = SGLANG_PREFILL_COUNTERS_PREVIOUS
+    SGLANG_PREFILL_COUNTERS_PREVIOUS = (prefill_cache, prefill_compute)
+
+    if previous is None:
+        total = prefill_cache + prefill_compute
+
+        return prefill_cache / total if total > 0 else None
+
+    previous_cache, previous_compute = previous
+    cache_delta = prefill_cache - previous_cache
+    compute_delta = prefill_compute - previous_compute
+
+    if cache_delta < 0 or compute_delta < 0:
+        total = prefill_cache + prefill_compute
+
+        return prefill_cache / total if total > 0 else None
+
+    total_delta = cache_delta + compute_delta
+
+    return cache_delta / total_delta if total_delta > 0 else None
+
+
+def parse_prometheus_label(body: str, label_name: str) -> str | None:
+    needle = f'{label_name}="'
+
+    for line in body.splitlines():
+        if line.startswith("#") or needle not in line:
+            continue
+
+        value = parse_metric_label(line, label_name)
+
+        if value is not None:
+            return value
+
+    return None
+
+
+def parse_metric_label(line: str, label_name: str) -> str | None:
+    needle = f'{label_name}="'
+
+    if needle not in line:
+        return None
+
+    after = line.split(needle, 1)[1]
+    value, separator, _ = after.partition('"')
+
+    return value if separator else None
 
 
 def read_cuda_process_memory() -> dict[str, Any]:
@@ -760,6 +951,7 @@ def mock_snapshot() -> dict[str, Any]:
             "systemNetwork": "mock",
             "systemDisk": "mock",
             "gpu": "mock",
+            "inference": "mock",
         },
         "system": {
             "memory": {
@@ -811,6 +1003,24 @@ def mock_snapshot() -> dict[str, Any]:
                 "valueW": round(70 + math.sin(t * 0.58 + 2.0) * 8, 1),
                 "maxW": None,
             },
+        },
+        "inference": {
+            "available": True,
+            "runtime": "sglang",
+            "model": "qwen3.8-27b",
+            "contextTokens": SGLANG_CONTEXT_TOKENS,
+            "genThroughput": round(max(42.8 + math.sin(t * 0.41 + 0.2) * 7.5, 0), 1),
+            "numUsedTokens": round(max(67_800 + math.sin(t * 0.23 + 1.2) * 18_000, 0)),
+            "maxTotalNumTokens": 455_439,
+            "specAcceptRate": round(clamp_pct(61 + math.sin(t * 0.37 + 0.5) * 12) / 100, 2),
+            "specAcceptLength": round(max(3.8 + math.sin(t * 0.32 + 0.1) * 0.8, 0), 1),
+            "prefixHitRate": round(clamp_pct(84 + math.sin(t * 0.29 + 0.9) * 9) / 100, 2),
+            "cacheHitRate": round(clamp_pct(84 + math.sin(t * 0.29 + 0.9) * 9) / 100, 2),
+            "prefillCacheTokens": 62_208,
+            "prefillComputeTokens": 23_008,
+            "numRunningReqs": 1,
+            "numQueueReqs": 0,
+            "source": "mock",
         },
     }
 

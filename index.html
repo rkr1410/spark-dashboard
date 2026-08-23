@@ -207,22 +207,29 @@
           </div>
         </section>
 
-        <section class="llm-shell" aria-label="LLM runtime">
-          <div>
-            <p class="section-label">LLM Runtime</p>
-            <h2>vLLM metrics</h2>
-          </div>
+        <section class="llm-shell" aria-label="Inference stats">
           <div class="llm-grid">
-            <div class="llm-slot"></div>
-            <div class="llm-slot"></div>
-            <div class="llm-slot"></div>
-            <div class="llm-slot"></div>
+            <div class="llm-slot" data-inference-tile="throughput">
+              <span class="llm-stat" data-inference-stat="throughput">42.8 tok/s</span>
+            </div>
+            <div class="llm-slot" data-inference-tile="context">
+              <span class="llm-stat" data-inference-stat="context">67.8k / 262k</span>
+            </div>
+            <div class="llm-slot" data-inference-tile="draft">
+              <span class="llm-stat" data-inference-stat="draft">0.61 / 3.8</span>
+            </div>
+            <div class="llm-slot llm-slot-short" data-inference-tile="prefix">
+              <span class="llm-stat" data-inference-stat="prefix">84%</span>
+            </div>
+            <div class="llm-slot llm-slot-compact" data-inference-tile="requests">
+              <span class="llm-stat" data-inference-stat="requests">1</span>
+            </div>
           </div>
         </section>
       </section>
     </main>
-    <script src="./src/scripts/mock-data.js?v=20260723-system-io-1" defer></script>
-    <script src="./src/scripts/render.js?v=20260723-system-io-1" defer></script>
-    <script src="./src/scripts/app.js?v=20260723-system-io-1" defer></script>
+    <script src="./src/scripts/mock-data.js?v=20260822-sglang-metrics-3" defer></script>
+    <script src="./src/scripts/render.js?v=20260822-sglang-metrics-3" defer></script>
+    <script src="./src/scripts/app.js?v=20260822-sglang-metrics-3" defer></script>
   </body>
 </html>

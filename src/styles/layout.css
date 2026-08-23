@@ -567,36 +567,65 @@
 
 .llm-shell {
   display: grid;
-  grid-template-columns: minmax(190px, 0.44fr) 1fr;
-  gap: 20px;
-  padding: 24px 28px;
+  align-items: center;
+  min-height: 116px;
+  padding: 14px 28px;
   border-radius: var(--radius-panel);
   background: var(--color-surface);
 }
 
-.llm-shell h2 {
-  margin-top: 8px;
-  color: var(--color-text);
-  font-size: 20px;
-  font-weight: 750;
-}
-
 .llm-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns:
+    minmax(116px, 158px)
+    minmax(136px, 176px)
+    minmax(116px, 158px)
+    minmax(72px, 92px)
+    42px;
   gap: 12px;
+  justify-content: start;
 }
 
 .llm-slot {
-  min-height: 82px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-panel);
   background: var(--color-surface-raised);
 }
 
+.llm-slot-compact {
+  width: 42px;
+  padding: 0;
+}
+
+.llm-stat {
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 740;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  transition: opacity 180ms ease;
+}
+
+.llm-slot.is-dim .llm-stat {
+  opacity: 0.65;
+}
+
+.llm-slot.is-more-dim .llm-stat {
+  opacity: 0.35;
+}
+
+.llm-slot.is-offline .llm-stat {
+  opacity: 0.45;
+}
+
 @media (max-width: 880px) {
-  .metric-row,
-  .llm-shell {
+  .metric-row {
     grid-template-columns: 1fr;
   }
 

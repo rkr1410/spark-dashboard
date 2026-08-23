@@ -53,6 +53,23 @@
         series: [66.0, 68.5, 70.4, 72.0, 69.2, 71.1, 73.0, 70.6, 68.8, 70.2],
       },
     },
+    inference: {
+      available: true,
+      runtime: "sglang",
+      model: "qwen3.8-27b",
+      contextTokens: 262144,
+      genThroughput: 42.8,
+      numUsedTokens: 67800,
+      maxTotalNumTokens: 455439,
+      specAcceptRate: 0.61,
+      specAcceptLength: 3.8,
+      prefixHitRate: 0.84,
+      cacheHitRate: 0.84,
+      prefillCacheTokens: 62208,
+      prefillComputeTokens: 23008,
+      numRunningReqs: 1,
+      numQueueReqs: 0,
+    },
   };
 
   function round(value, digits) {
@@ -158,6 +175,23 @@
           series: cloneSeries(state.gpu.power.series),
         },
       },
+      inference: {
+        available: state.inference.available,
+        runtime: state.inference.runtime,
+        model: state.inference.model,
+        contextTokens: state.inference.contextTokens,
+        genThroughput: state.inference.genThroughput,
+        numUsedTokens: state.inference.numUsedTokens,
+        maxTotalNumTokens: state.inference.maxTotalNumTokens,
+        specAcceptRate: state.inference.specAcceptRate,
+        specAcceptLength: state.inference.specAcceptLength,
+        prefixHitRate: state.inference.prefixHitRate,
+        cacheHitRate: state.inference.cacheHitRate,
+        prefillCacheTokens: state.inference.prefillCacheTokens,
+        prefillComputeTokens: state.inference.prefillComputeTokens,
+        numRunningReqs: state.inference.numRunningReqs,
+        numQueueReqs: state.inference.numQueueReqs,
+      },
     };
   }
 
@@ -178,6 +212,25 @@
     state.gpu.utilization.valuePct = Math.round(clamp(wave(50, 14, 0.38, 3.1), 0, 100));
     state.gpu.temp.valueC = round(wave(75, 2.0, 0.35, 0.4), 1);
     state.gpu.power.valueW = round(wave(70, 8, 0.58, 2.0), 1);
+    state.inference.numRunningReqs = tick % 28 < 14 ? 1 : 0;
+    state.inference.genThroughput = state.inference.numRunningReqs
+      ? round(wave(42.8, 7.5, 0.41, 0.2), 1)
+      : 0;
+    state.inference.numUsedTokens = Math.round(clamp(wave(67800, 18000, 0.23, 1.2), 0, Infinity));
+    state.inference.specAcceptRate = state.inference.numRunningReqs
+      ? round(clamp(wave(0.61, 0.12, 0.37, 0.5), 0, 1), 2)
+      : 0;
+    state.inference.specAcceptLength = state.inference.numRunningReqs
+      ? round(clamp(wave(3.8, 0.8, 0.32, 0.1), 0, Infinity), 1)
+      : 0;
+    state.inference.cacheHitRate = state.inference.numRunningReqs
+      ? round(clamp(wave(0.84, 0.09, 0.29, 0.9), 0, 1), 2)
+      : state.inference.cacheHitRate;
+    state.inference.prefixHitRate = state.inference.numRunningReqs
+      ? state.inference.cacheHitRate
+      : null;
+    state.inference.prefillCacheTokens += state.inference.numRunningReqs ? Math.round(120 + Math.sin(tick * 0.4) * 60) : 0;
+    state.inference.prefillComputeTokens += state.inference.numRunningReqs ? Math.round(40 + Math.sin(tick * 0.3) * 20) : 0;
 
     push(state.system.memory.series, state.system.memory.usedGb);
     push(state.system.temp.series, state.system.temp.valueC);
