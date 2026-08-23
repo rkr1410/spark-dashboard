@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import urllib.error
+import urllib.request
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -14,6 +16,8 @@ from collectors import build_startup_report, collect_snapshot
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SGLANG_ABORT_URL = "http://localhost:8000/pause_generation"
+SGLANG_CONTINUE_URL = "http://localhost:8000/continue_generation"
 
 
 class SparkDashboardHandler(SimpleHTTPRequestHandler):
@@ -41,10 +45,59 @@ class SparkDashboardHandler(SimpleHTTPRequestHandler):
 
         super().do_GET()
 
-    def send_snapshot(self) -> None:
-        payload = json.dumps(collect_snapshot(use_mock=self.force_mock)).encode("utf-8")
+    def do_POST(self) -> None:
+        if urlparse(self.path).path == "/api/inference/abort":
+            self.send_inference_abort()
+            return
 
-        self.send_response(HTTPStatus.OK)
+        self.send_error(HTTPStatus.NOT_FOUND, "File not found")
+
+    def send_snapshot(self) -> None:
+        self.send_json(collect_snapshot(use_mock=self.force_mock))
+
+    def send_inference_abort(self) -> None:
+        if self.force_mock:
+            self.send_json({"ok": True, "source": "mock"})
+            return
+
+        abort_error = self.post_sglang_control(SGLANG_ABORT_URL, {"mode": "abort"})
+        continue_error = self.post_sglang_control(SGLANG_CONTINUE_URL, {})
+
+        if abort_error or continue_error:
+            self.send_json(
+                {
+                    "ok": False,
+                    "abortError": abort_error,
+                    "continueError": continue_error,
+                    "source": "sglang_pause_continue",
+                },
+                status=HTTPStatus.BAD_GATEWAY,
+            )
+            return
+
+        self.send_json({"ok": True, "source": "sglang_pause_continue"})
+
+    def post_sglang_control(self, url: str, body: object) -> str | None:
+        request_body = json.dumps(body).encode("utf-8")
+        request = urllib.request.Request(
+            url,
+            data=request_body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(request, timeout=1.5) as response:
+                response.read(200_000)
+        except (OSError, urllib.error.URLError, TimeoutError) as error:
+            return str(error)
+
+        return None
+
+    def send_json(self, value: object, status: HTTPStatus = HTTPStatus.OK) -> None:
+        payload = json.dumps(value).encode("utf-8")
+
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(payload)))

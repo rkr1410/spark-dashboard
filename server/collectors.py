@@ -34,6 +34,7 @@ IO_PREVIOUS: dict[str, tuple[float, int, int]] = {}
 PROCESS_MEMORY_CACHE_TTL_SECONDS = 5.0
 PROCESS_MEMORY_CACHE: tuple[float, dict[str, Any]] | None = None
 SGLANG_PREFILL_COUNTERS_PREVIOUS: tuple[float, float] | None = None
+SGLANG_DECODE_COUNTER_PREVIOUS: float | None = None
 NVML_SUCCESS = 0
 NVML_TEMPERATURE_GPU = 0
 NVML: ctypes.CDLL | None = None
@@ -213,6 +214,7 @@ def read_sglang_metrics() -> dict[str, Any]:
         realtime_tokens.get("prefill_cache"),
         realtime_tokens.get("prefill_compute"),
     )
+    decode_delta_tokens = decode_delta_from_counter(realtime_tokens.get("decode"))
 
     required = ("genThroughput", "numRunningReqs", "numQueueReqs")
 
@@ -235,6 +237,8 @@ def read_sglang_metrics() -> dict[str, Any]:
         "prefillComputeTokens": realtime_tokens.get("prefill_compute"),
         "prefillCacheDeltaTokens": prefix_counters["prefillCacheDeltaTokens"],
         "prefillComputeDeltaTokens": prefix_counters["prefillComputeDeltaTokens"],
+        "decodeTokens": realtime_tokens.get("decode"),
+        "decodeDeltaTokens": decode_delta_tokens,
         "numRunningReqs": values.get("numRunningReqs"),
         "numQueueReqs": values.get("numQueueReqs"),
         "source": "sglang_metrics",
@@ -258,6 +262,8 @@ def empty_inference(source: str) -> dict[str, Any]:
         "prefillComputeTokens": None,
         "prefillCacheDeltaTokens": None,
         "prefillComputeDeltaTokens": None,
+        "decodeTokens": None,
+        "decodeDeltaTokens": None,
         "numRunningReqs": None,
         "numQueueReqs": None,
         "source": source,
@@ -296,7 +302,7 @@ def parse_sglang_realtime_tokens(body: str) -> dict[str, float]:
 
         mode = parse_metric_label(line, "mode")
 
-        if mode not in {"prefill_cache", "prefill_compute"}:
+        if mode not in {"prefill_cache", "prefill_compute", "decode"}:
             continue
 
         _, _, rest = line.partition(" ")
@@ -353,6 +359,23 @@ def prefix_stats_from_counters(
         "prefillCacheDeltaTokens": cache_delta,
         "prefillComputeDeltaTokens": compute_delta,
     }
+
+
+def decode_delta_from_counter(decode_tokens: float | None) -> float | None:
+    global SGLANG_DECODE_COUNTER_PREVIOUS
+
+    if decode_tokens is None:
+        return None
+
+    previous = SGLANG_DECODE_COUNTER_PREVIOUS
+    SGLANG_DECODE_COUNTER_PREVIOUS = decode_tokens
+
+    if previous is None:
+        return 0.0
+
+    delta = decode_tokens - previous
+
+    return delta if delta >= 0 else 0.0
 
 
 def parse_prometheus_label(body: str, label_name: str) -> str | None:
@@ -1037,6 +1060,8 @@ def mock_snapshot() -> dict[str, Any]:
             "prefillComputeTokens": 23_008,
             "prefillCacheDeltaTokens": round(max(900 + math.sin(t * 0.4) * 260, 0)),
             "prefillComputeDeltaTokens": round(max(230 + math.sin(t * 0.3) * 90, 0)),
+            "decodeTokens": 5_822,
+            "decodeDeltaTokens": round(max(42.8 + math.sin(t * 0.41 + 0.2) * 7.5, 0)),
             "numRunningReqs": 1,
             "numQueueReqs": 0,
             "source": "mock",

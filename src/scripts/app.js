@@ -7,6 +7,8 @@
   var INFERENCE_IDLE_MORE_DIM_MS = 10000;
   var INFERENCE_IDLE_CLEAR_MS = 20000;
   var PREFILL_DELTA_MIN_TOKENS = 128;
+  var DECODE_DELTA_MIN_TOKENS = 1;
+  var ABORT_CONFIRM_MS = 500;
   var inferenceDisplay = {
     lastActiveAt: 0,
     activeStartedAt: 0,
@@ -15,6 +17,10 @@
     prefixCacheTokens: 0,
     prefixComputeTokens: 0,
     prefixHitRate: null,
+    abortConfirmUntil: 0,
+    abortConfirmTimer: null,
+    abortInFlight: false,
+    abortEnabled: false,
   };
 
   var elements = {
@@ -122,6 +128,10 @@
     if (element) {
       element.textContent = text;
     }
+  }
+
+  function canPostApi() {
+    return window.location.protocol !== "file:" && typeof window.fetch === "function";
   }
 
   function formatTokenCount(value) {
@@ -326,6 +336,8 @@
         prefillComputeTokens: asNumber(inference.prefillComputeTokens),
         prefillCacheDeltaTokens: asNumber(inference.prefillCacheDeltaTokens),
         prefillComputeDeltaTokens: asNumber(inference.prefillComputeDeltaTokens),
+        decodeTokens: asNumber(inference.decodeTokens),
+        decodeDeltaTokens: asNumber(inference.decodeDeltaTokens),
         numRunningReqs: asNumber(inference.numRunningReqs),
         numQueueReqs: asNumber(inference.numQueueReqs),
       },
@@ -580,6 +592,14 @@
     return cacheDelta + computeDelta;
   }
 
+  function hasCurrentTokenActivity(inference) {
+    var decodeDelta = isNumber(inference.decodeDeltaTokens)
+      ? Math.max(inference.decodeDeltaTokens, 0)
+      : 0;
+
+    return decodeDelta >= DECODE_DELTA_MIN_TOKENS || prefillDeltaTotal(inference) >= PREFILL_DELTA_MIN_TOKENS;
+  }
+
   function resetInferenceDisplay() {
     inferenceDisplay.lastActiveAt = 0;
     inferenceDisplay.activeStartedAt = 0;
@@ -588,6 +608,12 @@
     inferenceDisplay.prefixCacheTokens = 0;
     inferenceDisplay.prefixComputeTokens = 0;
     inferenceDisplay.prefixHitRate = null;
+    inferenceDisplay.abortEnabled = false;
+    clearAbortConfirm();
+
+    if (elements.inference.tiles.duration) {
+      elements.inference.tiles.duration.classList.remove("is-abort-enabled");
+    }
   }
 
   function clearInferenceActivePeriod() {
@@ -631,6 +657,9 @@
     var contextLimitText = useGlobalKv
       ? formatTokenCount(contextDenominator)
       : formatContextLimit(contextDenominator);
+    var contextProgress = isNumber(inference.numUsedTokens) && isNumber(contextDenominator) && contextDenominator > 0
+      ? clamp((inference.numUsedTokens / contextDenominator) * 100, 0, 100)
+      : null;
 
     return {
       throughput: formatTokPerSecond(inference.genThroughput),
@@ -646,17 +675,14 @@
           ? inferenceDisplay.lastValues.prefix
           : "--",
       duration: formatDuration(durationMs),
+      contextProgress: contextProgress,
     };
   }
 
   function inferenceIsActive(inference) {
     var running = requestCount(inference.numRunningReqs) || 0;
 
-    return (
-      running > 0 ||
-      (isNumber(inference.genThroughput) && inference.genThroughput > 0) ||
-      prefillDeltaTotal(inference) >= PREFILL_DELTA_MIN_TOKENS
-    );
+    return hasCurrentTokenActivity(inference) || (inferenceDisplay.activeStartedAt > 0 && running > 0);
   }
 
   function setInferenceState(tile, state) {
@@ -669,12 +695,90 @@
     tile.classList.toggle("is-offline", state === "offline");
   }
 
+  function abortConfirmIsActive() {
+    return Date.now() <= inferenceDisplay.abortConfirmUntil;
+  }
+
+  function clearAbortConfirm() {
+    if (inferenceDisplay.abortConfirmTimer) {
+      window.clearTimeout(inferenceDisplay.abortConfirmTimer);
+      inferenceDisplay.abortConfirmTimer = null;
+    }
+
+    inferenceDisplay.abortConfirmUntil = 0;
+
+    if (elements.inference.tiles.duration) {
+      elements.inference.tiles.duration.classList.remove("is-abort-confirm");
+    }
+  }
+
+  function showAbortConfirm() {
+    if (!inferenceDisplay.abortEnabled) {
+      return;
+    }
+
+    clearAbortConfirm();
+    inferenceDisplay.abortConfirmUntil = Date.now() + ABORT_CONFIRM_MS;
+
+    setText(elements.inference.stats.duration, "x");
+
+    if (elements.inference.tiles.duration) {
+      elements.inference.tiles.duration.classList.add("is-abort-confirm");
+    }
+
+    inferenceDisplay.abortConfirmTimer = window.setTimeout(function () {
+      clearAbortConfirm();
+      setText(elements.inference.stats.duration, formatDuration(inferenceDisplay.lastDurationMs || 0));
+    }, ABORT_CONFIRM_MS);
+  }
+
+  function abortInference() {
+    if (inferenceDisplay.abortInFlight || !inferenceDisplay.abortEnabled || !canPostApi()) {
+      return;
+    }
+
+    inferenceDisplay.abortInFlight = true;
+    clearAbortConfirm();
+
+    window
+      .fetch("/api/inference/abort", {
+        method: "POST",
+        cache: "no-store",
+      })
+      .finally(function () {
+        inferenceDisplay.abortInFlight = false;
+      });
+  }
+
+  function handleDurationClick() {
+    if (!inferenceDisplay.abortEnabled) {
+      return;
+    }
+
+    if (abortConfirmIsActive()) {
+      abortInference();
+      return;
+    }
+
+    showAbortConfirm();
+  }
+
+  function handleDurationMouseLeave() {
+    if (!abortConfirmIsActive()) {
+      return;
+    }
+
+    clearAbortConfirm();
+    setText(elements.inference.stats.duration, formatDuration(inferenceDisplay.lastDurationMs || 0));
+  }
+
   function renderInference(snapshot) {
     var inference = snapshot.inference || {};
     var statElements = elements.inference.stats;
     var tiles = elements.inference.tiles;
     var performanceKeys = ["throughput", "context", "draft", "prefix"];
     var running = requestCount(inference.numRunningReqs);
+    var visibleRunning = null;
 
     if (!inference.available) {
       resetInferenceDisplay();
@@ -689,6 +793,8 @@
     var active = inferenceIsActive(inference);
     var values = null;
     var state = "live";
+    visibleRunning = running == null ? null : active ? running : 0;
+    inferenceDisplay.abortEnabled = visibleRunning > 0 && canPostApi();
 
     if (active) {
       if (!inferenceDisplay.activeStartedAt) {
@@ -726,9 +832,28 @@
       setInferenceState(tiles[key], displayState);
     });
 
-    setText(statElements.requests, running == null ? "--" : String(running));
+    if (tiles.context) {
+      tiles.context.style.setProperty(
+        "--context-progress",
+        values && isNumber(values.contextProgress) ? values.contextProgress : 0,
+      );
+    }
+
+    setText(statElements.requests, visibleRunning == null ? "--" : String(visibleRunning));
     setInferenceState(tiles.requests, running == null ? "offline" : displayState);
-    setText(statElements.duration, formatDuration(inferenceDisplay.lastDurationMs || 0));
+
+    if (tiles.duration) {
+      tiles.duration.classList.toggle("is-abort-enabled", inferenceDisplay.abortEnabled);
+    }
+
+    if (!inferenceDisplay.abortEnabled && abortConfirmIsActive()) {
+      clearAbortConfirm();
+    }
+
+    if (!abortConfirmIsActive()) {
+      setText(statElements.duration, formatDuration(inferenceDisplay.lastDurationMs || 0));
+    }
+
     setInferenceState(tiles.duration, displayState);
   }
 
@@ -749,6 +874,11 @@
 
   if (!data || !render) {
     return;
+  }
+
+  if (elements.inference.tiles.duration) {
+    elements.inference.tiles.duration.addEventListener("click", handleDurationClick);
+    elements.inference.tiles.duration.addEventListener("mouseleave", handleDurationMouseLeave);
   }
 
   tick();

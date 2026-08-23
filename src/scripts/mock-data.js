@@ -69,6 +69,8 @@
       prefillComputeTokens: 23008,
       prefillCacheDeltaTokens: 900,
       prefillComputeDeltaTokens: 230,
+      decodeTokens: 5822,
+      decodeDeltaTokens: 43,
       numRunningReqs: 1,
       numQueueReqs: 0,
     },
@@ -193,6 +195,8 @@
         prefillComputeTokens: state.inference.prefillComputeTokens,
         prefillCacheDeltaTokens: state.inference.prefillCacheDeltaTokens,
         prefillComputeDeltaTokens: state.inference.prefillComputeDeltaTokens,
+        decodeTokens: state.inference.decodeTokens,
+        decodeDeltaTokens: state.inference.decodeDeltaTokens,
         numRunningReqs: state.inference.numRunningReqs,
         numQueueReqs: state.inference.numQueueReqs,
       },
@@ -244,6 +248,10 @@
     state.inference.prefillComputeDeltaTokens = computeDelta;
     state.inference.prefillCacheTokens += cacheDelta;
     state.inference.prefillComputeTokens += computeDelta;
+    state.inference.decodeDeltaTokens = state.inference.numRunningReqs
+      ? Math.round(clamp(state.inference.genThroughput, 0, Infinity))
+      : 0;
+    state.inference.decodeTokens += state.inference.decodeDeltaTokens;
 
     push(state.system.memory.series, state.system.memory.usedGb);
     push(state.system.temp.series, state.system.temp.valueC);
