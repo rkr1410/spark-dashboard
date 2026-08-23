@@ -67,6 +67,8 @@
       cacheHitRate: 0.84,
       prefillCacheTokens: 62208,
       prefillComputeTokens: 23008,
+      prefillCacheDeltaTokens: 900,
+      prefillComputeDeltaTokens: 230,
       numRunningReqs: 1,
       numQueueReqs: 0,
     },
@@ -189,6 +191,8 @@
         cacheHitRate: state.inference.cacheHitRate,
         prefillCacheTokens: state.inference.prefillCacheTokens,
         prefillComputeTokens: state.inference.prefillComputeTokens,
+        prefillCacheDeltaTokens: state.inference.prefillCacheDeltaTokens,
+        prefillComputeDeltaTokens: state.inference.prefillComputeDeltaTokens,
         numRunningReqs: state.inference.numRunningReqs,
         numQueueReqs: state.inference.numQueueReqs,
       },
@@ -226,11 +230,20 @@
     state.inference.cacheHitRate = state.inference.numRunningReqs
       ? round(clamp(wave(0.84, 0.09, 0.29, 0.9), 0, 1), 2)
       : state.inference.cacheHitRate;
-    state.inference.prefixHitRate = state.inference.numRunningReqs
-      ? state.inference.cacheHitRate
-      : null;
-    state.inference.prefillCacheTokens += state.inference.numRunningReqs ? Math.round(120 + Math.sin(tick * 0.4) * 60) : 0;
-    state.inference.prefillComputeTokens += state.inference.numRunningReqs ? Math.round(40 + Math.sin(tick * 0.3) * 20) : 0;
+
+    var cacheDelta = state.inference.numRunningReqs
+      ? Math.round(clamp(900 + Math.sin(tick * 0.4) * 260, 0, Infinity))
+      : 0;
+    var computeDelta = state.inference.numRunningReqs
+      ? Math.round(clamp(230 + Math.sin(tick * 0.3) * 90, 0, Infinity))
+      : 0;
+    var totalDelta = cacheDelta + computeDelta;
+
+    state.inference.prefixHitRate = totalDelta > 0 ? cacheDelta / totalDelta : null;
+    state.inference.prefillCacheDeltaTokens = cacheDelta;
+    state.inference.prefillComputeDeltaTokens = computeDelta;
+    state.inference.prefillCacheTokens += cacheDelta;
+    state.inference.prefillComputeTokens += computeDelta;
 
     push(state.system.memory.series, state.system.memory.usedGb);
     push(state.system.temp.series, state.system.temp.valueC);

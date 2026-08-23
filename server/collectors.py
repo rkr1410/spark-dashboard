@@ -189,8 +189,6 @@ def read_system_memory() -> dict[str, Any]:
 
 
 def read_sglang_metrics() -> dict[str, Any]:
-    global SGLANG_PREFILL_COUNTERS_PREVIOUS
-
     try:
         with urllib.request.urlopen(SGLANG_METRICS_URL, timeout=0.8) as response:
             body = response.read(1_000_000).decode("utf-8", errors="replace")
@@ -211,7 +209,7 @@ def read_sglang_metrics() -> dict[str, Any]:
         },
     )
     realtime_tokens = parse_sglang_realtime_tokens(body)
-    prefix_hit_rate = prefix_hit_rate_from_counters(
+    prefix_counters = prefix_stats_from_counters(
         realtime_tokens.get("prefill_cache"),
         realtime_tokens.get("prefill_compute"),
     )
@@ -231,10 +229,12 @@ def read_sglang_metrics() -> dict[str, Any]:
         "maxTotalNumTokens": values.get("maxTotalNumTokens"),
         "specAcceptRate": values.get("specAcceptRate"),
         "specAcceptLength": values.get("specAcceptLength"),
-        "prefixHitRate": prefix_hit_rate,
+        "prefixHitRate": prefix_counters["prefixHitRate"],
         "cacheHitRate": values.get("cacheHitRate"),
         "prefillCacheTokens": realtime_tokens.get("prefill_cache"),
         "prefillComputeTokens": realtime_tokens.get("prefill_compute"),
+        "prefillCacheDeltaTokens": prefix_counters["prefillCacheDeltaTokens"],
+        "prefillComputeDeltaTokens": prefix_counters["prefillComputeDeltaTokens"],
         "numRunningReqs": values.get("numRunningReqs"),
         "numQueueReqs": values.get("numQueueReqs"),
         "source": "sglang_metrics",
@@ -256,6 +256,8 @@ def empty_inference(source: str) -> dict[str, Any]:
         "cacheHitRate": None,
         "prefillCacheTokens": None,
         "prefillComputeTokens": None,
+        "prefillCacheDeltaTokens": None,
+        "prefillComputeDeltaTokens": None,
         "numRunningReqs": None,
         "numQueueReqs": None,
         "source": source,
@@ -307,35 +309,50 @@ def parse_sglang_realtime_tokens(body: str) -> dict[str, float]:
     return counters
 
 
-def prefix_hit_rate_from_counters(
+def prefix_stats_from_counters(
     prefill_cache: float | None,
     prefill_compute: float | None,
-) -> float | None:
+) -> dict[str, float | None]:
     global SGLANG_PREFILL_COUNTERS_PREVIOUS
 
+    empty = {
+        "prefixHitRate": None,
+        "prefillCacheDeltaTokens": None,
+        "prefillComputeDeltaTokens": None,
+    }
+
     if prefill_cache is None or prefill_compute is None:
-        return None
+        return empty
 
     previous = SGLANG_PREFILL_COUNTERS_PREVIOUS
     SGLANG_PREFILL_COUNTERS_PREVIOUS = (prefill_cache, prefill_compute)
+    total = prefill_cache + prefill_compute
 
     if previous is None:
-        total = prefill_cache + prefill_compute
-
-        return prefill_cache / total if total > 0 else None
+        return {
+            "prefixHitRate": prefill_cache / total if total > 0 else None,
+            "prefillCacheDeltaTokens": 0.0,
+            "prefillComputeDeltaTokens": 0.0,
+        }
 
     previous_cache, previous_compute = previous
     cache_delta = prefill_cache - previous_cache
     compute_delta = prefill_compute - previous_compute
 
     if cache_delta < 0 or compute_delta < 0:
-        total = prefill_cache + prefill_compute
-
-        return prefill_cache / total if total > 0 else None
+        return {
+            "prefixHitRate": prefill_cache / total if total > 0 else None,
+            "prefillCacheDeltaTokens": 0.0,
+            "prefillComputeDeltaTokens": 0.0,
+        }
 
     total_delta = cache_delta + compute_delta
 
-    return cache_delta / total_delta if total_delta > 0 else None
+    return {
+        "prefixHitRate": cache_delta / total_delta if total_delta > 0 else None,
+        "prefillCacheDeltaTokens": cache_delta,
+        "prefillComputeDeltaTokens": compute_delta,
+    }
 
 
 def parse_prometheus_label(body: str, label_name: str) -> str | None:
@@ -1018,6 +1035,8 @@ def mock_snapshot() -> dict[str, Any]:
             "cacheHitRate": round(clamp_pct(84 + math.sin(t * 0.29 + 0.9) * 9) / 100, 2),
             "prefillCacheTokens": 62_208,
             "prefillComputeTokens": 23_008,
+            "prefillCacheDeltaTokens": round(max(900 + math.sin(t * 0.4) * 260, 0)),
+            "prefillComputeDeltaTokens": round(max(230 + math.sin(t * 0.3) * 90, 0)),
             "numRunningReqs": 1,
             "numQueueReqs": 0,
             "source": "mock",

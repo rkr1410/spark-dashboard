@@ -6,9 +6,13 @@
   var INFERENCE_IDLE_DIM_MS = 2000;
   var INFERENCE_IDLE_MORE_DIM_MS = 10000;
   var INFERENCE_IDLE_CLEAR_MS = 20000;
+  var PREFILL_DELTA_MIN_TOKENS = 128;
   var inferenceDisplay = {
     lastActiveAt: 0,
     lastValues: null,
+    prefixCacheTokens: 0,
+    prefixComputeTokens: 0,
+    prefixHitRate: null,
   };
 
   var elements = {
@@ -294,6 +298,8 @@
         cacheHitRate: asNumber(inference.cacheHitRate),
         prefillCacheTokens: asNumber(inference.prefillCacheTokens),
         prefillComputeTokens: asNumber(inference.prefillComputeTokens),
+        prefillCacheDeltaTokens: asNumber(inference.prefillCacheDeltaTokens),
+        prefillComputeDeltaTokens: asNumber(inference.prefillComputeDeltaTokens),
         numRunningReqs: asNumber(inference.numRunningReqs),
         numQueueReqs: asNumber(inference.numQueueReqs),
       },
@@ -537,19 +543,48 @@
     );
   }
 
-  function resolvePrefixHitRate(inference) {
-    if (isNumber(inference.prefixHitRate)) {
-      return inference.prefixHitRate;
-    }
+  function prefillDeltaTotal(inference) {
+    var cacheDelta = isNumber(inference.prefillCacheDeltaTokens)
+      ? Math.max(inference.prefillCacheDeltaTokens, 0)
+      : 0;
+    var computeDelta = isNumber(inference.prefillComputeDeltaTokens)
+      ? Math.max(inference.prefillComputeDeltaTokens, 0)
+      : 0;
 
-    if (inferenceDisplay.lastValues && inferenceDisplay.lastValues.prefix !== "--") {
-      return null;
-    }
-
-    return inference.cacheHitRate;
+    return cacheDelta + computeDelta;
   }
 
-  function buildInferenceValues(inference) {
+  function resetInferenceDisplay() {
+    inferenceDisplay.lastActiveAt = 0;
+    inferenceDisplay.lastValues = null;
+    inferenceDisplay.prefixCacheTokens = 0;
+    inferenceDisplay.prefixComputeTokens = 0;
+    inferenceDisplay.prefixHitRate = null;
+  }
+
+  function updatePrefixHitAggregate(inference) {
+    var cacheDelta = isNumber(inference.prefillCacheDeltaTokens)
+      ? Math.max(inference.prefillCacheDeltaTokens, 0)
+      : 0;
+    var computeDelta = isNumber(inference.prefillComputeDeltaTokens)
+      ? Math.max(inference.prefillComputeDeltaTokens, 0)
+      : 0;
+    var totalDelta = cacheDelta + computeDelta;
+
+    if (totalDelta >= PREFILL_DELTA_MIN_TOKENS) {
+      inferenceDisplay.prefixCacheTokens += cacheDelta;
+      inferenceDisplay.prefixComputeTokens += computeDelta;
+
+      var total = inferenceDisplay.prefixCacheTokens + inferenceDisplay.prefixComputeTokens;
+      inferenceDisplay.prefixHitRate = total > 0 ? inferenceDisplay.prefixCacheTokens / total : null;
+    } else if (!isNumber(inferenceDisplay.prefixHitRate) && isNumber(inference.prefixHitRate)) {
+      inferenceDisplay.prefixHitRate = inference.prefixHitRate;
+    }
+
+    return inferenceDisplay.prefixHitRate;
+  }
+
+  function buildInferenceValues(inference, prefixHitRate) {
     var running = requestCount(inference.numRunningReqs) || 0;
     var queue = requestCount(inference.numQueueReqs) || 0;
     var useGlobalKv = running > 1 || queue > 0;
@@ -568,8 +603,8 @@
       draft: isNumber(inference.specAcceptRate) && isNumber(inference.specAcceptLength)
         ? formatSpecRate(inference.specAcceptRate) + " / " + formatSpecLength(inference.specAcceptLength)
         : "--",
-      prefix: isNumber(resolvePrefixHitRate(inference))
-        ? formatRatioPercent(resolvePrefixHitRate(inference))
+      prefix: isNumber(prefixHitRate)
+        ? formatRatioPercent(prefixHitRate)
         : inferenceDisplay.lastValues && inferenceDisplay.lastValues.prefix
           ? inferenceDisplay.lastValues.prefix
           : "--",
@@ -579,7 +614,11 @@
   function inferenceIsActive(inference) {
     var running = requestCount(inference.numRunningReqs) || 0;
 
-    return running > 0 || (isNumber(inference.genThroughput) && inference.genThroughput > 0);
+    return (
+      running > 0 ||
+      (isNumber(inference.genThroughput) && inference.genThroughput > 0) ||
+      prefillDeltaTotal(inference) >= PREFILL_DELTA_MIN_TOKENS
+    );
   }
 
   function setInferenceState(tile, state) {
@@ -600,6 +639,7 @@
     var running = requestCount(inference.numRunningReqs);
 
     if (!inference.available) {
+      resetInferenceDisplay();
       performanceKeys.concat(["requests"]).forEach(function (key) {
         setText(statElements[key], "--");
         setInferenceState(tiles[key], "offline");
@@ -613,7 +653,7 @@
     var state = "live";
 
     if (active) {
-      values = buildInferenceValues(inference);
+      values = buildInferenceValues(inference, updatePrefixHitAggregate(inference));
       inferenceDisplay.lastValues = values;
       inferenceDisplay.lastActiveAt = now;
     } else if (inferenceDisplay.lastValues && inferenceDisplay.lastActiveAt) {
@@ -627,16 +667,20 @@
       } else if (idleMs <= INFERENCE_IDLE_CLEAR_MS) {
         values = inferenceDisplay.lastValues;
         state = "more-dim";
+      } else {
+        resetInferenceDisplay();
       }
     }
 
+    var displayState = values ? state : "offline";
+
     performanceKeys.forEach(function (key) {
       setText(statElements[key], values ? values[key] : "--");
-      setInferenceState(tiles[key], values ? state : "offline");
+      setInferenceState(tiles[key], displayState);
     });
 
     setText(statElements.requests, running == null ? "--" : String(running));
-    setInferenceState(tiles.requests, running == null ? "offline" : "live");
+    setInferenceState(tiles.requests, running == null ? "offline" : displayState);
   }
 
   function renderSnapshot(snapshot) {
