@@ -1,0 +1,33 @@
+name: spark-dashboard
+
+services:
+  dashboard:
+    build: .
+    image: local/spark-dashboard:latest
+    container_name: spark-dashboard
+    init: true
+    restart: unless-stopped
+
+    network_mode: host
+    pid: host
+    gpus: all
+
+    environment:
+      INFERENCE_BASE_URL: http://127.0.0.1:8000
+      NVIDIA_DRIVER_CAPABILITIES: utility
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+
+    read_only: true
+    tmpfs:
+      - /tmp
+
+    healthcheck:
+      test:
+        - CMD
+        - python3
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/', timeout=3).read(1)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
