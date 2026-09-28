@@ -12,12 +12,12 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
-from collectors import build_startup_report, collect_snapshot
+from collectors import INFERENCE_BASE_URL, build_startup_report, collect_snapshot, read_inference_metrics
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SGLANG_ABORT_URL = "http://localhost:8000/pause_generation"
-SGLANG_CONTINUE_URL = "http://localhost:8000/continue_generation"
+SGLANG_ABORT_URL = INFERENCE_BASE_URL + "/pause_generation"
+SGLANG_CONTINUE_URL = INFERENCE_BASE_URL + "/continue_generation"
 
 
 class SparkDashboardHandler(SimpleHTTPRequestHandler):
@@ -58,6 +58,14 @@ class SparkDashboardHandler(SimpleHTTPRequestHandler):
     def send_inference_abort(self) -> None:
         if self.force_mock:
             self.send_json({"ok": True, "source": "mock"})
+            return
+
+        inference = read_inference_metrics(force=True)
+        if inference["runtime"] != "sglang" or not inference["supportsAbort"]:
+            self.send_json(
+                {"ok": False, "error": "Abort is available only for a detected SGLang server", "source": inference["source"]},
+                status=HTTPStatus.CONFLICT,
+            )
             return
 
         abort_error = self.post_sglang_control(SGLANG_ABORT_URL, {"mode": "abort"})

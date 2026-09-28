@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Spark Dashboard</title>
-    <link rel="stylesheet" href="./src/styles/theme.css?v=20260824-abort-hover-1" />
-    <link rel="stylesheet" href="./src/styles/base.css?v=20260824-abort-hover-1" />
-    <link rel="stylesheet" href="./src/styles/layout.css?v=20260824-abort-hover-1" />
+    <link rel="stylesheet" href="./src/styles/theme.css?v=20260827-inference-slots-2" />
+    <link rel="stylesheet" href="./src/styles/base.css?v=20260827-inference-slots-2" />
+    <link rel="stylesheet" href="./src/styles/layout.css?v=20260828-context-contrast-2" />
   </head>
   <body>
     <header class="topbar">
@@ -208,6 +208,7 @@
         </section>
 
         <section class="llm-shell" aria-label="Inference stats">
+          <div class="llm-source" data-inference-source>Inference</div>
           <div class="llm-grid">
             <div class="llm-slot" data-inference-tile="throughput">
               <span class="llm-stat" data-inference-stat="throughput">42.8 tok/s</span>
@@ -231,8 +232,8 @@
         </section>
       </section>
     </main>
-    <script src="./src/scripts/mock-data.js?v=20260824-abort-hover-1" defer></script>
-    <script src="./src/scripts/render.js?v=20260824-abort-hover-1" defer></script>
-    <script src="./src/scripts/app.js?v=20260824-abort-hover-1" defer></script>
+    <script src="./src/scripts/mock-data.js?v=20260827-inference-slots-2" defer></script>
+    <script src="./src/scripts/render.js?v=20260827-inference-slots-2" defer></script>
+    <script src="./src/scripts/app.js?v=20260827-inference-slots-2" defer></script>
   </body>
 </html>

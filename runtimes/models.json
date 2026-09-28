@@ -1,7 +1,7 @@
 {
   "providers": {
     "hal-vllm-8000": {
-      "baseUrl": "http://HAL-9000.local:8000/v1",
+      "baseUrl": "http://192.168.1.123:8000/v1",
       "api": "openai-completions",
       "apiKey": "local",
       "compat": {
@@ -32,7 +32,7 @@
       ]
     },
     "hal-vllm-8001": {
-      "baseUrl": "http://HAL-9000.local:8001/v1",
+      "baseUrl": "http://192.168.1.123:8001/v1",
       "api": "openai-completions",
       "apiKey": "local",
       "compat": {
@@ -55,7 +55,7 @@
       ]
     },
     "hal-vllm-8002": {
-      "baseUrl": "http://HAL-9000.local:8002/v1",
+      "baseUrl": "http://192.168.1.123:8002/v1",
       "api": "openai-completions",
       "apiKey": "local",
       "compat": {
@@ -86,7 +86,7 @@
       ]
     },
     "hal-vllm-8003": {
-      "baseUrl": "http://HAL-9000.local:8003/v1",
+      "baseUrl": "http://192.168.1.123:8003/v1",
       "api": "openai-completions",
       "apiKey": "local",
       "compat": {

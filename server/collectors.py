@@ -9,8 +9,12 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.util
+import json
 import math
+import os
+import re
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -27,14 +31,19 @@ PROC_STAT_PATH = Path("/proc/stat")
 NET_DEV_PATH = Path("/proc/net/dev")
 DISKSTATS_PATH = Path("/proc/diskstats")
 SYS_BLOCK_ROOT = Path("/sys/block")
-SGLANG_METRICS_URL = "http://localhost:8000/metrics"
+INFERENCE_BASE_URL = os.environ.get("INFERENCE_BASE_URL", "http://localhost:8000").rstrip("/")
 SGLANG_CONTEXT_TOKENS = 262_144
+INFERENCE_LOCK = threading.Lock()
+INFERENCE_CACHE: tuple[float, dict[str, Any]] | None = None
+INFERENCE_IDENTITY: str | None = None
+LLAMACPP_SLOTS_PREVIOUS: tuple[float, dict[int, tuple[int | None, float, bool]]] | None = None
+PROMETHEUS_SAMPLE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{.*\})?\s+(\S+)(?:\s+.*)?$')
 CPU_PREVIOUS: dict[int, tuple[int, int]] = {}
 IO_PREVIOUS: dict[str, tuple[float, int, int]] = {}
 PROCESS_MEMORY_CACHE_TTL_SECONDS = 5.0
 PROCESS_MEMORY_CACHE: tuple[float, dict[str, Any]] | None = None
-SGLANG_PREFILL_COUNTERS_PREVIOUS: tuple[float, float] | None = None
-SGLANG_DECODE_COUNTER_PREVIOUS: float | None = None
+PREFILL_COUNTERS_PREVIOUS: tuple[float, float] | None = None
+DECODE_COUNTER_PREVIOUS: float | None = None
 NVML_SUCCESS = 0
 NVML_TEMPERATURE_GPU = 0
 NVML: ctypes.CDLL | None = None
@@ -61,7 +70,7 @@ def collect_snapshot(use_mock: bool = False) -> dict[str, Any]:
     network = read_network_io()
     disk = read_disk_io()
     gpu = read_gpu_nvml()
-    inference = read_sglang_metrics()
+    inference = read_inference_metrics()
 
     return {
         "timestamp": utc_timestamp(),
@@ -189,13 +198,110 @@ def read_system_memory() -> dict[str, Any]:
     }
 
 
-def read_sglang_metrics() -> dict[str, Any]:
+def read_inference_endpoint(path: str, *, parse_json: bool = False) -> tuple[Any, int | None]:
     try:
-        with urllib.request.urlopen(SGLANG_METRICS_URL, timeout=0.8) as response:
+        with urllib.request.urlopen(INFERENCE_BASE_URL + path, timeout=0.8) as response:
             body = response.read(1_000_000).decode("utf-8", errors="replace")
+            status = response.status
+    except urllib.error.HTTPError as error:
+        error.close()
+        return None, error.code
     except (OSError, urllib.error.URLError, TimeoutError):
-        return empty_inference("sglang_metrics_unavailable")
+        return None, None
 
+    if parse_json:
+        try:
+            return json.loads(body), status
+        except ValueError:
+            return None, status
+
+    return body, status
+
+
+def read_inference_metrics(*, force: bool = False) -> dict[str, Any]:
+    global INFERENCE_CACHE, INFERENCE_IDENTITY, PREFILL_COUNTERS_PREVIOUS, DECODE_COUNTER_PREVIOUS
+    global LLAMACPP_SLOTS_PREVIOUS
+
+    # Snapshot requests can overlap or come from several browser tabs. Share a
+    # sample so concurrent scrapes do not consume each other's counter deltas.
+    with INFERENCE_LOCK:
+        if not force and INFERENCE_CACHE and time.monotonic() - INFERENCE_CACHE[0] < 0.5:
+            return INFERENCE_CACHE[1]
+
+        body, status = read_inference_endpoint("/metrics")
+        body = body if isinstance(body, str) else ""
+        names = {
+            match.group(1)
+            for line in body.splitlines()
+            if (match := PROMETHEUS_SAMPLE.match(line.strip()))
+        }
+        runtime = None
+        if any(name.startswith("sglang:") for name in names):
+            runtime = "sglang"
+        elif any(name.startswith("llamacpp:") for name in names):
+            runtime = "llamacpp"
+
+        props: dict[str, Any] = {}
+        model_info: dict[str, Any] = {}
+        # Introspection also identifies llama.cpp when --metrics is disabled.
+        # Do not probe further after a connection or authentication failure.
+        if runtime == "llamacpp" or (runtime is None and status not in (None, 401, 403)):
+            payload, _ = read_inference_endpoint("/props", parse_json=True)
+            if isinstance(payload, dict) and "default_generation_settings" in payload and "total_slots" in payload:
+                props = payload
+                runtime = "llamacpp"
+        if runtime is None and status not in (None, 401, 403):
+            payload, _ = read_inference_endpoint("/get_model_info", parse_json=True)
+            if isinstance(payload, dict) and "model_path" in payload and "is_generation" in payload:
+                model_info = payload
+                runtime = "sglang"
+
+        model = (
+            props.get("model_alias") or props.get("model_path")
+            if runtime == "llamacpp"
+            else parse_prometheus_label(body, "model_name") or model_info.get("model_path")
+        )
+        identity = "|".join((INFERENCE_BASE_URL, runtime or "unknown", str(props.get("model_path") or model or "")))
+        if identity != INFERENCE_IDENTITY or not names:
+            PREFILL_COUNTERS_PREVIOUS = None
+            DECODE_COUNTER_PREVIOUS = None
+        if identity != INFERENCE_IDENTITY:
+            LLAMACPP_SLOTS_PREVIOUS = None
+        INFERENCE_IDENTITY = identity
+
+        if runtime == "sglang":
+            inference = parse_sglang_metrics(body)
+            inference["model"] = model
+            inference["supportsAbort"] = inference["available"]
+        elif runtime == "llamacpp":
+            slots, _ = read_inference_endpoint("/slots", parse_json=True)
+            inference = parse_llamacpp_metrics(body, props, slots)
+        else:
+            inference = empty_inference("inference_metrics_unavailable")
+
+        inference["identity"] = identity
+        inference["metricsHttpStatus"] = status
+        if not names:
+            if status in (401, 403):
+                inference["message"] = "Metrics require authentication"
+            elif status == 503:
+                inference["message"] = "Inference server is loading or unavailable (HTTP 503)"
+            elif status is None:
+                inference["message"] = "Inference server is unreachable"
+            elif runtime == "llamacpp" and props.get("endpoint_metrics") is False:
+                inference["message"] = "Metrics disabled: start llama-server with --metrics"
+            elif runtime == "sglang" and status in (404, 501):
+                inference["message"] = "Metrics unavailable: start SGLang with --enable-metrics"
+            else:
+                inference["message"] = "No supported inference metrics returned by /metrics"
+        elif runtime is None:
+            inference["message"] = "Unrecognized metrics format (expected SGLang or llama.cpp)"
+
+        INFERENCE_CACHE = (time.monotonic(), inference)
+        return inference
+
+
+def parse_sglang_metrics(body: str) -> dict[str, Any]:
     values = parse_prometheus_metrics(
         body,
         {
@@ -216,15 +322,11 @@ def read_sglang_metrics() -> dict[str, Any]:
     )
     decode_delta_tokens = decode_delta_from_counter(realtime_tokens.get("decode"))
 
-    required = ("genThroughput", "numRunningReqs", "numQueueReqs")
-
-    if any(values.get(key) is None for key in required):
-        return empty_inference("sglang_metrics_missing")
-
     return {
-        "available": True,
+        **empty_inference("sglang_metrics", "sglang"),
+        "available": any(value is not None for value in values.values()) or bool(realtime_tokens),
         "runtime": "sglang",
-        "model": parse_prometheus_label(body, "model_name") or "qwen3.8-27b",
+        "model": parse_prometheus_label(body, "model_name"),
         "contextTokens": SGLANG_CONTEXT_TOKENS,
         "genThroughput": values.get("genThroughput"),
         "numUsedTokens": values.get("numUsedTokens"),
@@ -245,12 +347,164 @@ def read_sglang_metrics() -> dict[str, Any]:
     }
 
 
-def empty_inference(source: str) -> dict[str, Any]:
+def parse_llamacpp_metrics(body: str, props: dict[str, Any], slots: Any) -> dict[str, Any]:
+    values = parse_prometheus_metrics(body, {
+        "llamacpp:predicted_tokens_seconds": "genThroughput",
+        "llamacpp:prompt_tokens_seconds": "prefillThroughput",
+        "llamacpp:requests_processing": "numRunningReqs",
+        "llamacpp:requests_deferred": "numQueueReqs",
+        "llamacpp:tokens_predicted_total": "decodeTokens",
+        "llamacpp:prompt_tokens_total": "prefillComputeTokens",
+        "llamacpp:prompt_tokens_cached_total": "prefillCacheTokens",
+        "llamacpp:spec_decode_num_draft_tokens_total": "draftTokens",
+        "llamacpp:spec_decode_num_accepted_tokens_total": "acceptedTokens",
+        "llamacpp:spec_decode_num_drafts_total": "draftSteps",
+    })
+    inference = {
+        **empty_inference("llamacpp_metrics", "llamacpp"),
+        **{key: value for key, value in values.items() if key not in {"draftTokens", "acceptedTokens", "draftSteps"}},
+        "model": props.get("model_alias") or props.get("model_path"),
+        "contextTokens": None,
+        "decodeDeltaTokens": decode_delta_from_counter(values["decodeTokens"]),
+        **prefix_stats_from_counters(values["prefillCacheTokens"], values["prefillComputeTokens"]),
+        "serverGenThroughput": values["genThroughput"],
+        "throughputSource": "metrics",
+        "prefixHitRateSource": "metrics",
+    }
+    settings = props.get("default_generation_settings")
+    if isinstance(settings, dict):
+        inference["contextTokens"] = finite_nonnegative(settings.get("n_ctx"))
+
+    notes = inference["metricNotes"]
+    notes["throughput"] = "Fallback: llama.cpp server average; some builds update metrics only between requests. Live speed requires /slots with next_token.n_decoded"
+    notes["context"] = "Context occupancy requires /slots with token counts; n_tokens_max is a historical maximum, not current usage"
+    notes["prefix"] = "Prefix reuse requires prompt_tokens_cached_total and prompt_tokens_total; older llama.cpp builds may not export both"
+    notes["draft"] = "Draft acceptance and mean length (including the target token), cumulative since server start; unavailable before draft tokens exist"
+    notes["duration"] = "Observed activity time; abort from the dashboard is supported only for SGLang"
+
+    activity = llamacpp_slot_activity(slots)
+    if activity is not None:
+        inference.update(activity)
+        inference["throughputSource"] = "slots"
+        notes["throughput"] = "Live generated tokens/s from changes in /slots next_token.n_decoded; needs two samples, excludes prompt processing"
+
+    if isinstance(slots, list) and slots and all(isinstance(slot, dict) for slot in slots):
+        active_slots = [slot for slot in slots if slot.get("is_processing") is True]
+        if inference["numRunningReqs"] is None and all(isinstance(slot.get("is_processing"), bool) for slot in slots):
+            inference["numRunningReqs"] = len(active_slots)
+        limits = [finite_nonnegative(slot.get("n_ctx")) for slot in slots]
+        if all(limit is not None and limit > 0 for limit in limits):
+            inference["maxTotalNumTokens"] = sum(limits)
+            if len(active_slots) == 1:
+                inference["contextTokens"] = finite_nonnegative(active_slots[0].get("n_ctx"))
+            elif len(set(limits)) == 1:
+                inference["contextTokens"] = limits[0]
+        # Current llama.cpp counts both prompt and generated tokens in this
+        # field. Adding next_token.n_decoded would count generation twice.
+        used = [finite_nonnegative(slot.get("n_prompt_tokens")) for slot in active_slots or slots]
+        if all(value is not None for value in used):
+            inference["numUsedTokens"] = sum(used)
+            notes["context"] = "Current tokens in active llama.cpp slots / context capacity"
+        if all(slot.get("speculative") is False for slot in slots):
+            notes["draft"] = "Speculative decoding is disabled"
+
+        # These counters describe the current prompt even when the dashboard
+        # attaches mid-request and Prometheus has not committed its counters yet.
+        cached = [finite_nonnegative(slot.get("n_prompt_tokens_cache")) for slot in active_slots]
+        computed = [finite_nonnegative(slot.get("n_prompt_tokens_processed")) for slot in active_slots]
+        if active_slots and all(value is not None for value in cached + computed):
+            total = sum(cached) + sum(computed)
+            inference["prefixHitRate"] = sum(cached) / total if total > 0 else None
+            inference["prefixHitRateSource"] = "slots"
+            notes["prefix"] = "Current active slots: cached / (cached + processed) prompt tokens"
+
+    drafted, accepted, steps = (values[key] for key in ("draftTokens", "acceptedTokens", "draftSteps"))
+    if drafted is not None and drafted > 0 and accepted is not None:
+        inference["specAcceptRate"] = accepted / drafted
+        if steps is not None and steps > 0:
+            inference["specAcceptLength"] = 1 + accepted / steps
+    if values["prefillCacheTokens"] is not None and inference["prefixHitRateSource"] != "slots":
+        notes["prefix"] = "Cached / (cached + computed) prompt tokens in the observed activity period"
+
+    inference["available"] = any(inference[key] is not None for key in (
+        "genThroughput", "numRunningReqs", "numQueueReqs", "numUsedTokens", "decodeTokens",
+    ))
+    return inference
+
+
+def llamacpp_slot_activity(slots: Any) -> dict[str, float | None] | None:
+    global LLAMACPP_SLOTS_PREVIOUS
+
+    samples: dict[int, tuple[int | None, float, bool]] = {}
+    if not isinstance(slots, list) or not slots:
+        LLAMACPP_SLOTS_PREVIOUS = None
+        return None
+
+    for slot in slots:
+        if not isinstance(slot, dict):
+            LLAMACPP_SLOTS_PREVIOUS = None
+            return None
+        slot_id, task_id, processing = slot.get("id"), slot.get("id_task"), slot.get("is_processing")
+        next_token = slot.get("next_token")
+        # Older llama.cpp versions return an object; this build returns [object].
+        if isinstance(next_token, list):
+            next_token = next_token[0] if len(next_token) == 1 else None
+        decoded = finite_nonnegative(next_token.get("n_decoded")) if isinstance(next_token, dict) else None
+        if (
+            type(slot_id) is not int or type(processing) is not bool
+            or slot_id in samples
+            or (processing and (type(task_id) is not int or decoded is None))
+        ):
+            LLAMACPP_SLOTS_PREVIOUS = None
+            return None
+        samples[slot_id] = (task_id, decoded or 0.0, processing)
+
+    now = time.monotonic()
+    previous = LLAMACPP_SLOTS_PREVIOUS
+    LLAMACPP_SLOTS_PREVIOUS = (now, samples)
+    waiting = {"genThroughput": None, "decodeDeltaTokens": None}
+    if previous is None:
+        if not any(sample[2] for sample in samples.values()):
+            return {"genThroughput": 0.0, "decodeDeltaTokens": 0.0}
+        return waiting
+
+    elapsed = now - previous[0]
+    if elapsed <= 0 or elapsed > 5 or samples.keys() != previous[1].keys():
+        return waiting
+
+    delta = 0.0
+    for slot_id, (task_id, decoded, processing) in samples.items():
+        previous_task, previous_decoded, _ = previous[1][slot_id]
+        if task_id != previous_task:
+            # A slot was reused since the previous sample. Its new task's
+            # generated tokens belong to this interval, not the preceding task.
+            delta += decoded if processing else 0.0
+        elif decoded >= previous_decoded:
+            delta += decoded - previous_decoded
+        elif processing:
+            # Counter reset/restart: establish a fresh baseline, never a spike.
+            return waiting
+        # Idle slots can clear their final counters on release. Do not subtract
+        # the old count or use the now-committed Prometheus total a second time.
+
+    return {"genThroughput": delta / elapsed, "decodeDeltaTokens": delta}
+
+
+def finite_nonnegative(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return float(value) if math.isfinite(value) and value >= 0 else None
+
+
+def empty_inference(source: str, runtime: str | None = None) -> dict[str, Any]:
     return {
         "available": False,
-        "runtime": "sglang",
+        "runtime": runtime,
         "model": None,
-        "contextTokens": SGLANG_CONTEXT_TOKENS,
+        "contextTokens": SGLANG_CONTEXT_TOKENS if runtime == "sglang" else None,
+        "supportsAbort": False,
+        "message": None,
+        "metricNotes": {},
         "genThroughput": None,
         "numUsedTokens": None,
         "maxTotalNumTokens": None,
@@ -277,17 +531,17 @@ def parse_prometheus_metrics(body: str, names: dict[str, str]) -> dict[str, floa
         if not line or line.startswith("#"):
             continue
 
-        metric, _, rest = line.partition(" ")
-        metric_name = metric.split("{", 1)[0]
-        target = names.get(metric_name)
+        sample = PROMETHEUS_SAMPLE.match(line.strip())
+        if sample is None:
+            continue
+        target = names.get(sample.group(1))
 
         if target is None:
             continue
 
-        value_text = rest.strip().split(" ", 1)[0]
-        value = parse_float(value_text)
+        value = parse_float(sample.group(2))
 
-        if value is not None:
+        if value is not None and value >= 0:
             values[target] = value
 
     return values
@@ -297,7 +551,8 @@ def parse_sglang_realtime_tokens(body: str) -> dict[str, float]:
     counters: dict[str, float] = {}
 
     for line in body.splitlines():
-        if not line.startswith("sglang:realtime_tokens_total{"):
+        sample = PROMETHEUS_SAMPLE.match(line.strip())
+        if sample is None or sample.group(1) != "sglang:realtime_tokens_total":
             continue
 
         mode = parse_metric_label(line, "mode")
@@ -305,11 +560,9 @@ def parse_sglang_realtime_tokens(body: str) -> dict[str, float]:
         if mode not in {"prefill_cache", "prefill_compute", "decode"}:
             continue
 
-        _, _, rest = line.partition(" ")
-        value_text = rest.strip().split(" ", 1)[0]
-        value = parse_float(value_text)
+        value = parse_float(sample.group(2))
 
-        if value is not None:
+        if value is not None and value >= 0:
             counters[mode] = value
 
     return counters
@@ -319,7 +572,7 @@ def prefix_stats_from_counters(
     prefill_cache: float | None,
     prefill_compute: float | None,
 ) -> dict[str, float | None]:
-    global SGLANG_PREFILL_COUNTERS_PREVIOUS
+    global PREFILL_COUNTERS_PREVIOUS
 
     empty = {
         "prefixHitRate": None,
@@ -328,10 +581,11 @@ def prefix_stats_from_counters(
     }
 
     if prefill_cache is None or prefill_compute is None:
+        PREFILL_COUNTERS_PREVIOUS = None
         return empty
 
-    previous = SGLANG_PREFILL_COUNTERS_PREVIOUS
-    SGLANG_PREFILL_COUNTERS_PREVIOUS = (prefill_cache, prefill_compute)
+    previous = PREFILL_COUNTERS_PREVIOUS
+    PREFILL_COUNTERS_PREVIOUS = (prefill_cache, prefill_compute)
     total = prefill_cache + prefill_compute
 
     if previous is None:
@@ -362,13 +616,14 @@ def prefix_stats_from_counters(
 
 
 def decode_delta_from_counter(decode_tokens: float | None) -> float | None:
-    global SGLANG_DECODE_COUNTER_PREVIOUS
+    global DECODE_COUNTER_PREVIOUS
 
     if decode_tokens is None:
+        DECODE_COUNTER_PREVIOUS = None
         return None
 
-    previous = SGLANG_DECODE_COUNTER_PREVIOUS
-    SGLANG_DECODE_COUNTER_PREVIOUS = decode_tokens
+    previous = DECODE_COUNTER_PREVIOUS
+    DECODE_COUNTER_PREVIOUS = decode_tokens
 
     if previous is None:
         return 0.0
@@ -394,15 +649,13 @@ def parse_prometheus_label(body: str, label_name: str) -> str | None:
 
 
 def parse_metric_label(line: str, label_name: str) -> str | None:
-    needle = f'{label_name}="'
-
-    if needle not in line:
+    match = re.search(r'(?:\{|,)\s*' + re.escape(label_name) + r'="((?:\\.|[^"\\])*)"', line)
+    if match is None:
         return None
-
-    after = line.split(needle, 1)[1]
-    value, separator, _ = after.partition('"')
-
-    return value if separator else None
+    try:
+        return json.loads('"' + match.group(1) + '"')
+    except ValueError:
+        return None
 
 
 def read_cuda_process_memory() -> dict[str, Any]:
@@ -530,7 +783,8 @@ def read_proc_key_values(path: Path) -> dict[str, int]:
 
 def parse_float(value: str) -> float | None:
     try:
-        return float(value)
+        number = float(value)
+        return number if math.isfinite(number) else None
     except ValueError:
         return None
 
@@ -1047,6 +1301,7 @@ def mock_snapshot() -> dict[str, Any]:
         "inference": {
             "available": True,
             "runtime": "sglang",
+            "supportsAbort": True,
             "model": "qwen3.8-27b",
             "contextTokens": SGLANG_CONTEXT_TOKENS,
             "genThroughput": round(max(42.8 + math.sin(t * 0.41 + 0.2) * 7.5, 0), 1),

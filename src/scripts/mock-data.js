@@ -56,6 +56,7 @@
     inference: {
       available: true,
       runtime: "sglang",
+      supportsAbort: true,
       model: "qwen3.8-27b",
       contextTokens: 262144,
       genThroughput: 42.8,
@@ -182,6 +183,7 @@
       inference: {
         available: state.inference.available,
         runtime: state.inference.runtime,
+        supportsAbort: state.inference.supportsAbort,
         model: state.inference.model,
         contextTokens: state.inference.contextTokens,
         genThroughput: state.inference.genThroughput,

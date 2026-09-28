@@ -3,17 +3,28 @@
   var render = window.SparkRender;
   var SERIES_LIMIT = 10;
   var liveSeries = {};
+  var snapshotInFlight = false;
   var INFERENCE_IDLE_DIM_MS = 2000;
   var INFERENCE_IDLE_MORE_DIM_MS = 10000;
   var INFERENCE_IDLE_CLEAR_MS = 20000;
+  var INFERENCE_ACTIVE_SAMPLE_MAX_MS = 2000;
+  var INFERENCE_LAST_RUN_STORAGE_KEY = "spark-dashboard.inference.last-run.v1";
+  var INFERENCE_LAST_RUN_MAX_AGE_MS = 24 * 60 * 60 * 1000;
   var PREFILL_DELTA_MIN_TOKENS = 128;
   var DECODE_DELTA_MIN_TOKENS = 1;
   var ABORT_CONFIRM_MS = 500;
   var inferenceDisplay = {
+    identity: null,
     lastActiveAt: 0,
     activeStartedAt: 0,
+    activeElapsedMs: 0,
+    lastActiveSampleAt: 0,
     lastDurationMs: null,
     lastValues: null,
+    decodeTokenTotal: 0,
+    lastAverageThroughput: null,
+    throughputSampleTotal: 0,
+    throughputSampleCount: 0,
     prefixCacheTokens: 0,
     prefixComputeTokens: 0,
     prefixHitRate: null,
@@ -51,6 +62,7 @@
       disk: document.querySelector('[data-io-history="system.disk"]'),
     },
     inference: {
+      source: document.querySelector("[data-inference-source]"),
       tiles: {
         throughput: document.querySelector('[data-inference-tile="throughput"]'),
         context: document.querySelector('[data-inference-tile="context"]'),
@@ -107,6 +119,10 @@
   }
 
   function asNumber(value) {
+    if (value == null || value === "" || typeof value === "boolean") {
+      return null;
+    }
+
     var number = Number(value);
 
     return Number.isFinite(number) ? number : null;
@@ -132,6 +148,73 @@
 
   function canPostApi() {
     return window.location.protocol !== "file:" && typeof window.fetch === "function";
+  }
+
+  function resetInferenceRunStats() {
+    inferenceDisplay.activeElapsedMs = 0;
+    inferenceDisplay.lastActiveSampleAt = 0;
+    inferenceDisplay.decodeTokenTotal = 0;
+    inferenceDisplay.lastAverageThroughput = null;
+    inferenceDisplay.throughputSampleTotal = 0;
+    inferenceDisplay.throughputSampleCount = 0;
+    inferenceDisplay.prefixCacheTokens = 0;
+    inferenceDisplay.prefixComputeTokens = 0;
+    inferenceDisplay.prefixHitRate = null;
+  }
+
+  function saveInferenceLastRun() {
+    if (!inferenceDisplay.lastValues) {
+      return;
+    }
+
+    try {
+      if (!window.localStorage) {
+        return;
+      }
+
+      window.localStorage.setItem(
+        INFERENCE_LAST_RUN_STORAGE_KEY,
+        JSON.stringify({
+          identity: inferenceDisplay.identity,
+          savedAt: Date.now(),
+          lastActiveAt: inferenceDisplay.lastActiveAt,
+          lastDurationMs: inferenceDisplay.lastDurationMs,
+          lastValues: inferenceDisplay.lastValues,
+          lastAverageThroughput: inferenceDisplay.lastAverageThroughput,
+        }),
+      );
+    } catch (error) {
+      // Ignore storage failures; live telemetry should keep rendering.
+    }
+  }
+
+  function restoreInferenceLastRun() {
+    try {
+      if (!window.localStorage) {
+        return;
+      }
+
+      var saved = JSON.parse(window.localStorage.getItem(INFERENCE_LAST_RUN_STORAGE_KEY));
+
+      if (!saved || typeof saved !== "object" || !saved.lastValues || typeof saved.identity !== "string") {
+        return;
+      }
+
+      if (isNumber(saved.savedAt) && Date.now() - saved.savedAt > INFERENCE_LAST_RUN_MAX_AGE_MS) {
+        return;
+      }
+
+      inferenceDisplay.identity = saved.identity;
+      inferenceDisplay.lastActiveAt = isNumber(saved.lastActiveAt) ? saved.lastActiveAt : saved.savedAt;
+      inferenceDisplay.lastDurationMs = isNumber(saved.lastDurationMs) ? saved.lastDurationMs : null;
+      inferenceDisplay.activeElapsedMs = inferenceDisplay.lastDurationMs || 0;
+      inferenceDisplay.lastValues = saved.lastValues;
+      inferenceDisplay.lastAverageThroughput = isNumber(saved.lastAverageThroughput)
+        ? saved.lastAverageThroughput
+        : null;
+    } catch (error) {
+      // Ignore malformed stored state.
+    }
   }
 
   function formatTokenCount(value) {
@@ -324,6 +407,12 @@
         available: inference.available === true,
         runtime: inference.runtime || null,
         model: inference.model || null,
+        identity: inference.identity || [inference.runtime || "unknown", inference.model || ""].join(":"),
+        supportsAbort: inference.supportsAbort === true,
+        message: inference.message || null,
+        metricNotes: inference.metricNotes || {},
+        throughputSource: inference.throughputSource || null,
+        prefixHitRateSource: inference.prefixHitRateSource || null,
         contextTokens: asNumber(inference.contextTokens),
         genThroughput: asNumber(inference.genThroughput),
         numUsedTokens: asNumber(inference.numUsedTokens),
@@ -600,14 +689,37 @@
     return decodeDelta >= DECODE_DELTA_MIN_TOKENS || prefillDeltaTotal(inference) >= PREFILL_DELTA_MIN_TOKENS;
   }
 
+  function hasTokenActivitySignals(inference) {
+    return (
+      isNumber(inference.decodeDeltaTokens) ||
+      isNumber(inference.prefillCacheDeltaTokens) ||
+      isNumber(inference.prefillComputeDeltaTokens)
+    );
+  }
+
+  function updateAverageThroughput(inference, durationMs) {
+    var decodeDelta = isNumber(inference.decodeDeltaTokens)
+      ? Math.max(inference.decodeDeltaTokens, 0)
+      : 0;
+
+    inferenceDisplay.decodeTokenTotal += decodeDelta;
+
+    if (inferenceDisplay.decodeTokenTotal > 0 && durationMs > 0) {
+      inferenceDisplay.lastAverageThroughput = inferenceDisplay.decodeTokenTotal / (durationMs / 1000);
+    } else if (isNumber(inference.genThroughput) && inference.genThroughput > 0) {
+      inferenceDisplay.throughputSampleTotal += inference.genThroughput;
+      inferenceDisplay.throughputSampleCount += 1;
+      inferenceDisplay.lastAverageThroughput =
+        inferenceDisplay.throughputSampleTotal / inferenceDisplay.throughputSampleCount;
+    }
+  }
+
   function resetInferenceDisplay() {
     inferenceDisplay.lastActiveAt = 0;
     inferenceDisplay.activeStartedAt = 0;
     inferenceDisplay.lastDurationMs = null;
     inferenceDisplay.lastValues = null;
-    inferenceDisplay.prefixCacheTokens = 0;
-    inferenceDisplay.prefixComputeTokens = 0;
-    inferenceDisplay.prefixHitRate = null;
+    resetInferenceRunStats();
     inferenceDisplay.abortEnabled = false;
     clearAbortConfirm();
 
@@ -616,16 +728,12 @@
     }
   }
 
-  function clearInferenceActivePeriod() {
-    inferenceDisplay.lastActiveAt = 0;
-    inferenceDisplay.activeStartedAt = 0;
-    inferenceDisplay.lastValues = null;
-    inferenceDisplay.prefixCacheTokens = 0;
-    inferenceDisplay.prefixComputeTokens = 0;
-    inferenceDisplay.prefixHitRate = null;
-  }
-
   function updatePrefixHitAggregate(inference) {
+    if (inference.prefixHitRateSource === "slots") {
+      inferenceDisplay.prefixHitRate = inference.prefixHitRate;
+      return inference.prefixHitRate;
+    }
+
     var cacheDelta = isNumber(inference.prefillCacheDeltaTokens)
       ? Math.max(inference.prefillCacheDeltaTokens, 0)
       : 0;
@@ -671,7 +779,7 @@
         : "--",
       prefix: isNumber(prefixHitRate)
         ? formatRatioPercent(prefixHitRate)
-        : inferenceDisplay.lastValues && inferenceDisplay.lastValues.prefix
+        : inference.prefixHitRateSource !== "slots" && inferenceDisplay.lastValues && inferenceDisplay.lastValues.prefix
           ? inferenceDisplay.lastValues.prefix
           : "--",
       duration: formatDuration(durationMs),
@@ -681,6 +789,16 @@
 
   function inferenceIsActive(inference) {
     var running = requestCount(inference.numRunningReqs) || 0;
+
+    if (inference.runtime === "llamacpp") {
+      // llama.cpp's throughput gauge can stay positive when idle. Conversely,
+      // a long prefill is active even before token counters start advancing.
+      return running > 0 || hasCurrentTokenActivity(inference);
+    }
+
+    if (!hasTokenActivitySignals(inference)) {
+      return running > 0 || (isNumber(inference.genThroughput) && inference.genThroughput > 0);
+    }
 
     return hasCurrentTokenActivity(inference) || (inferenceDisplay.activeStartedAt > 0 && running > 0);
   }
@@ -779,6 +897,44 @@
     var performanceKeys = ["throughput", "context", "draft", "prefix"];
     var running = requestCount(inference.numRunningReqs);
     var visibleRunning = null;
+    var identity = inference.identity || [inference.runtime || "unknown", inference.model || ""].join(":");
+    var runtimeLabel = { sglang: "SGLang", llamacpp: "llama.cpp" }[inference.runtime] || "Inference";
+    var sourceLabel = runtimeLabel + (inference.model ? " · " + inference.model : "");
+    var metricNotes = inference.metricNotes || {};
+    var metricLabels = {
+      throughput: "Generation throughput",
+      context: "Context usage",
+      draft: "Draft acceptance / mean accepted length",
+      prefix: "Prompt prefix cache hit rate",
+      requests: "Running requests; queued: " + (isNumber(inference.numQueueReqs) ? inference.numQueueReqs : "unavailable"),
+      duration: "Observed activity time",
+    };
+    var supported = {
+      throughput: isNumber(inference.genThroughput),
+      context: isNumber(inference.numUsedTokens) && (isNumber(inference.contextTokens) || isNumber(inference.maxTotalNumTokens)),
+      draft: isNumber(inference.specAcceptRate) && isNumber(inference.specAcceptLength),
+      prefix: isNumber(inference.prefixHitRate) || (isNumber(inference.prefillCacheTokens) && isNumber(inference.prefillComputeTokens)),
+      requests: isNumber(inference.numRunningReqs),
+      duration: isNumber(inference.numRunningReqs) || hasTokenActivitySignals(inference),
+    };
+
+    if (inferenceDisplay.identity !== identity) {
+      resetInferenceDisplay();
+      inferenceDisplay.identity = identity;
+    }
+    if (inference.message) {
+      sourceLabel += " · " + inference.message;
+    } else if (!inference.available) {
+      sourceLabel += " · metrics unavailable";
+    }
+    setText(elements.inference.source, sourceLabel);
+    Object.keys(metricLabels).forEach(function (key) {
+      if (tiles[key]) {
+        var explanation = metricNotes[key] || metricLabels[key];
+        tiles[key].setAttribute("title", explanation + (supported[key] ? "" : " — unavailable"));
+        tiles[key].setAttribute("aria-label", metricLabels[key]);
+      }
+    });
 
     if (!inference.available) {
       resetInferenceDisplay();
@@ -793,15 +949,27 @@
     var active = inferenceIsActive(inference);
     var values = null;
     var state = "live";
+    var useAverageThroughput = false;
     visibleRunning = running == null ? null : active ? running : 0;
-    inferenceDisplay.abortEnabled = visibleRunning > 0 && canPostApi();
+    inferenceDisplay.abortEnabled = inference.supportsAbort === true && visibleRunning > 0 && canPostApi();
 
     if (active) {
       if (!inferenceDisplay.activeStartedAt) {
         inferenceDisplay.activeStartedAt = now;
+        inferenceDisplay.lastValues = null;
+        resetInferenceRunStats();
       }
 
-      inferenceDisplay.lastDurationMs = now - inferenceDisplay.activeStartedAt;
+      if (inferenceDisplay.lastActiveSampleAt) {
+        inferenceDisplay.activeElapsedMs += Math.min(
+          Math.max(now - inferenceDisplay.lastActiveSampleAt, 0),
+          INFERENCE_ACTIVE_SAMPLE_MAX_MS,
+        );
+      }
+
+      inferenceDisplay.lastActiveSampleAt = now;
+      inferenceDisplay.lastDurationMs = inferenceDisplay.activeElapsedMs;
+      updateAverageThroughput(inference, inferenceDisplay.lastDurationMs);
       values = buildInferenceValues(
         inference,
         updatePrefixHitAggregate(inference),
@@ -809,8 +977,10 @@
       );
       inferenceDisplay.lastValues = values;
       inferenceDisplay.lastActiveAt = now;
+      saveInferenceLastRun();
     } else if (inferenceDisplay.lastValues && inferenceDisplay.lastActiveAt) {
       var idleMs = now - inferenceDisplay.lastActiveAt;
+      inferenceDisplay.lastActiveSampleAt = 0;
 
       if (idleMs <= INFERENCE_IDLE_DIM_MS) {
         values = inferenceDisplay.lastValues;
@@ -821,21 +991,41 @@
         values = inferenceDisplay.lastValues;
         state = "more-dim";
       } else {
-        clearInferenceActivePeriod();
+        values = inferenceDisplay.lastValues;
+        state = "more-dim";
+        useAverageThroughput = true;
       }
+    } else if (!supported.duration) {
+      // A partial exporter can provide useful values without any signal that
+      // tells us whether a request is active. Show those values without a timer.
+      values = buildInferenceValues(inference, inference.prefixHitRate, null);
+      state = "more-dim";
     }
 
     var displayState = values ? state : "offline";
+    var averageThroughputText = isNumber(inferenceDisplay.lastAverageThroughput)
+      ? formatTokPerSecond(inferenceDisplay.lastAverageThroughput)
+      : "--";
+    var throughputText = useAverageThroughput && averageThroughputText !== "--"
+      ? averageThroughputText
+      : values && values.throughput !== "--"
+        ? values.throughput
+        : averageThroughputText;
 
-    performanceKeys.forEach(function (key) {
-      setText(statElements[key], values ? values[key] : "--");
-      setInferenceState(tiles[key], displayState);
+    setText(statElements.throughput, supported.throughput ? throughputText : "--");
+    setInferenceState(tiles.throughput, supported.throughput ? displayState : "offline");
+
+    performanceKeys.filter(function (key) {
+      return key !== "throughput";
+    }).forEach(function (key) {
+      setText(statElements[key], supported[key] && values ? values[key] : "--");
+      setInferenceState(tiles[key], supported[key] && values && values[key] !== "--" ? displayState : "offline");
     });
 
     if (tiles.context) {
       tiles.context.style.setProperty(
         "--context-progress",
-        values && isNumber(values.contextProgress) ? values.contextProgress : 0,
+        supported.context && values && isNumber(values.contextProgress) ? values.contextProgress : 0,
       );
     }
 
@@ -851,10 +1041,10 @@
     }
 
     if (!abortConfirmIsActive()) {
-      setText(statElements.duration, formatDuration(inferenceDisplay.lastDurationMs || 0));
+      setText(statElements.duration, supported.duration ? formatDuration(inferenceDisplay.lastDurationMs || 0) : "--");
     }
 
-    setInferenceState(tiles.duration, displayState);
+    setInferenceState(tiles.duration, supported.duration ? displayState : "offline");
   }
 
   function renderSnapshot(snapshot) {
@@ -866,10 +1056,18 @@
   }
 
   function tick() {
-    fetchSnapshot().then(function (result) {
-      renderSnapshot(result.snapshot);
-      updateStatus(result.source);
-    });
+    if (snapshotInFlight) {
+      return;
+    }
+    snapshotInFlight = true;
+    fetchSnapshot()
+      .then(function (result) {
+        renderSnapshot(result.snapshot);
+        updateStatus(result.source);
+      })
+      .finally(function () {
+        snapshotInFlight = false;
+      });
   }
 
   if (!data || !render) {
@@ -881,6 +1079,7 @@
     elements.inference.tiles.duration.addEventListener("mouseleave", handleDurationMouseLeave);
   }
 
+  restoreInferenceLastRun();
   tick();
   window.setInterval(tick, 1000);
 })();
